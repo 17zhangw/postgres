@@ -42,6 +42,7 @@
 /**
  CREATE UNLOGGED TABLE pg_catalog.pg_qss_stats(
 	query_id bigint,
+	generation bigint,
 	db_id integer,
 	pid integer,
 	timestamp bigint,
@@ -57,6 +58,10 @@
 	counter7 float8,
 	counter8 float8,
 	counter9 float8,
+	blk_hit integer,
+	blk_miss integer,
+	blk_dirty integer,
+	blk_write integer,
 	payload bigint,
 	txn bigint,
 	comment text
@@ -70,8 +75,13 @@
  transaction ID that aborted.
  */
 #define STATS_TABLE_NAME "pg_qss_stats"
-#define STATS_TABLE_COLUMNS 19
-#define STATS_TABLE_COMMENT_IDX 18
+#define STATS_TABLE_COLUMNS 24
+
+#define STATS_PLAN_NODE_ID_IDX (5)
+#define STATS_ELAPSED_US_IDX (6)
+#define STATS_COUNTER_IDX (7)
+#define STATS_TXN_IDX (22)
+#define STATS_TABLE_COMMENT_IDX 23
 
 void qss_ProcessUtility(PlannedStmt *pstmt,
 						const char *queryString,
@@ -191,20 +201,24 @@ static void WriteInstrumentation(Plan *plan, Instrumentation *instr, Relation st
 	HeapTuple heap_tup = NULL;
 	const char* nodeName = NULL;
 	InstrEndLoop(instr);
-	values[4] = Int32GetDatum(plan ? plan->plan_node_id : instr->plan_node_id);
-	values[5] = Float8GetDatum(instr->total * 1000000.0);
-	values[6] = Float8GetDatum(instr->counter0);
-	values[7] = Float8GetDatum(instr->counter1);
-	values[8] = Float8GetDatum(instr->counter2);
-	values[9] = Float8GetDatum(instr->counter3);
-	values[10] = Float8GetDatum(instr->counter4);
-	values[11] = Float8GetDatum(instr->counter5);
-	values[12] = Float8GetDatum(instr->counter6);
-	values[13] = Float8GetDatum(instr->counter7);
-	values[14] = Float8GetDatum(instr->counter8);
-	values[15] = Float8GetDatum(instr->counter9);
-	values[16] = Int64GetDatum(instr->payload);
-	values[17] = TransactionIdGetDatum(GetCurrentTransactionId());
+	values[(STATS_PLAN_NODE_ID_IDX)] = Int32GetDatum(plan ? plan->plan_node_id : instr->plan_node_id);
+	values[(STATS_ELAPSED_US_IDX)] = Float8GetDatum(instr->total * 1000000.0);
+	values[(STATS_COUNTER_IDX + 0)] = Float8GetDatum(instr->counter0);
+	values[(STATS_COUNTER_IDX + 1)] = Float8GetDatum(instr->counter1);
+	values[(STATS_COUNTER_IDX + 2)] = Float8GetDatum(instr->counter2);
+	values[(STATS_COUNTER_IDX + 3)] = Float8GetDatum(instr->counter3);
+	values[(STATS_COUNTER_IDX + 4)] = Float8GetDatum(instr->counter4);
+	values[(STATS_COUNTER_IDX + 5)] = Float8GetDatum(instr->counter5);
+	values[(STATS_COUNTER_IDX + 6)] = Float8GetDatum(instr->counter6);
+	values[(STATS_COUNTER_IDX + 7)] = Float8GetDatum(instr->counter7);
+	values[(STATS_COUNTER_IDX + 8)] = Float8GetDatum(instr->counter8);
+	values[(STATS_COUNTER_IDX + 9)] = Float8GetDatum(instr->counter9);
+	values[(STATS_COUNTER_IDX + 10)] = Int32GetDatum(instr->bufusage.shared_blks_hit);
+	values[(STATS_COUNTER_IDX + 11)] = Int32GetDatum(instr->bufusage.shared_blks_read);
+	values[(STATS_COUNTER_IDX + 12)] = Int32GetDatum(instr->bufusage.shared_blks_dirtied);
+	values[(STATS_COUNTER_IDX + 13)] = Int32GetDatum(instr->bufusage.shared_blks_written);
+	values[(STATS_COUNTER_IDX + 14)] = Int64GetDatum(instr->payload);
+	values[(STATS_TXN_IDX)] = TransactionIdGetDatum(GetCurrentTransactionId());
 
 	if (plan) {
 		if (plan->type == T_ModifyTable) {
@@ -256,6 +270,7 @@ static void WritePlanInstrumentation(Plan *plan, PlanState *ps, Relation stats_t
 // for allocating any of this memory.
 struct ExecutorInstrument {
 	int64 queryId;
+	int generation;
 	char* params;
 	TimestampTz statement_ts;
 
@@ -284,13 +299,15 @@ void qss_Abort() {
 			memset(values, 0, sizeof(values));
 			memset(is_nulls, 0, sizeof(is_nulls));
 			values[0] = Int64GetDatumFast(top->queryId);
-			values[1] = ObjectIdGetDatum(MyDatabaseId);
-			values[2] = Int32GetDatum(MyProcPid);
-			values[3] = Int64GetDatumFast(top->statement_ts);
-			values[4] = Int32GetDatum(-1);
-			values[5] = Float8GetDatum(0.0);
-			values[6] = Float8GetDatum(0.0);
-			values[17] = TransactionIdGetDatum(GetCurrentTransactionId());
+			values[1] = Int32GetDatum(top->generation);
+			values[2] = ObjectIdGetDatum(MyDatabaseId);
+			values[3] = Int32GetDatum(MyProcPid);
+			values[4] = Int64GetDatumFast(top->statement_ts);
+
+			values[(STATS_PLAN_NODE_ID_IDX + 0)] = Int32GetDatum(-1);
+			values[(STATS_ELAPSED_US_IDX)] = Float8GetDatum(0.0);
+			values[(STATS_COUNTER_IDX)] = Float8GetDatum(0.0);
+			values[STATS_TXN_IDX] = TransactionIdGetDatum(GetCurrentTransactionId());
 
 			is_nulls[STATS_TABLE_COMMENT_IDX] = (top->params == NULL);
 			if (top->params != NULL) {
@@ -313,12 +330,14 @@ void qss_Abort() {
 			memset(values, 0, sizeof(values));
 			memset(is_nulls, 0, sizeof(is_nulls));
 			values[0] = Int64GetDatumFast(0);
-			values[1] = ObjectIdGetDatum(MyDatabaseId);
-			values[2] = Int32GetDatum(MyProcPid);
-			values[3] = Int64GetDatumFast(GetCurrentStatementStartTimestamp());
-			values[4] = Int32GetDatum(-1);
-			values[5] = Float8GetDatum(0.0);
-			values[17] = TransactionIdGetDatum(GetCurrentTransactionId());
+			values[1] = Int32GetDatum(0);
+			values[2] = ObjectIdGetDatum(MyDatabaseId);
+			values[3] = Int32GetDatum(MyProcPid);
+			values[4] = Int64GetDatumFast(GetCurrentStatementStartTimestamp());
+
+			values[(STATS_PLAN_NODE_ID_IDX)] = Int32GetDatum(-1);
+			values[(STATS_ELAPSED_US_IDX)] = Float8GetDatum(0.0);
+			values[STATS_TXN_IDX] = TransactionIdGetDatum(GetCurrentTransactionId());
 
 			is_nulls[STATS_TABLE_COMMENT_IDX] = false;
 			values[STATS_TABLE_COMMENT_IDX] = CStringGetTextDatum("TxnAbort");
@@ -370,7 +389,7 @@ Instrumentation* qss_AllocInstrumentation(EState* estate, const char *ou) {
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
 	instr = palloc0(sizeof(Instrumentation));
-	InstrInit(instr, INSTRUMENT_TIMER);
+	InstrInit(instr, INSTRUMENT_TIMER | INSTRUMENT_BUFFERS);
 	instr->plan_node_id = PLAN_INDEPENDENT_ID;
 	instr->ou = ou;
 
@@ -399,8 +418,9 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 					  (!query_desc->dest || query_desc->dest->mydest != DestSQLFunction);
 
 	// Attach INSTRUMENT_TIMER if we want those statistics.
+	// And get the buffer counts while we are at it...
 	if (need_instrument) {
-		query_desc->instrument_options |= INSTRUMENT_TIMER;
+		query_desc->instrument_options |= (INSTRUMENT_TIMER | INSTRUMENT_BUFFERS);
 	}
 
 	// Initialize the plan.
@@ -416,6 +436,7 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 	// TODO(wz2): This is probably not going to capture re-runs but we're on REPEATABLE_READ.
 	exec->statement_ts = GetCurrentStatementStartTimestamp();
 	exec->queryId = query_desc->plannedstmt->queryId;
+	exec->generation = query_desc->generation;
 	if (query_desc->params != NULL) {
 		exec->params = BuildParamLogString(query_desc->params, NULL, -1);
 	}
@@ -424,7 +445,7 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 
 	if (need_total && query_desc->totaltime == NULL) {
 		// Attach an instrument so we capture totaltime.
-		query_desc->totaltime = InstrAlloc(1, INSTRUMENT_TIMER, false, 0);
+		query_desc->totaltime = InstrAlloc(1, INSTRUMENT_TIMER | INSTRUMENT_BUFFERS, false, 0);
 	}
 
 	MemoryContextSwitchTo(oldcontext);
@@ -519,15 +540,16 @@ static void ProcessQueryInternalTable(QueryDesc *query_desc, bool instrument) {
 		memset(values, 0, sizeof(values));
 		memset(is_nulls, 0, sizeof(is_nulls));
 		values[0] = Int64GetDatumFast(top->queryId);
-		values[1] = ObjectIdGetDatum(MyDatabaseId);
-		values[2] = Int32GetDatum(MyProcPid);
-		values[3] = Int64GetDatumFast(top->statement_ts);
+		values[1] = Int32GetDatum(top->generation);
+		values[2] = ObjectIdGetDatum(MyDatabaseId);
+		values[3] = Int32GetDatum(MyProcPid);
+		values[4] = Int64GetDatumFast(top->statement_ts);
 		if (query_desc->totaltime) {
 			HeapTuple heap_tup = NULL;
-			values[4] = Int32GetDatum(-1);
-			values[5] = Float8GetDatum(query_desc->totaltime->total * 1000000.0);
-			values[6] = Float8GetDatum(1.0);
-			values[17] = TransactionIdGetDatum(GetCurrentTransactionId());
+			values[STATS_PLAN_NODE_ID_IDX] = Int32GetDatum(-1);
+			values[STATS_ELAPSED_US_IDX] = Float8GetDatum(query_desc->totaltime->total * 1000000.0);
+			values[STATS_COUNTER_IDX] = Float8GetDatum(1.0);
+			values[STATS_TXN_IDX] = TransactionIdGetDatum(GetCurrentTransactionId());
 
 			is_nulls[STATS_TABLE_COMMENT_IDX] = (top->params == NULL);
 			if (top->params != NULL) {
