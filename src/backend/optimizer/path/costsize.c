@@ -290,6 +290,7 @@ cost_seqscan(Path *path, PlannerInfo *root,
 
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + cpu_run_cost + disk_run_cost;
+	path->est_pages_needed = baserel->pages;
 }
 
 /*
@@ -496,6 +497,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	bool		indexonly = (path->path.pathtype == T_IndexOnlyScan);
 	amcostestimate_function amcostestimate;
 	List	   *qpquals;
+	Cost        page_est_cost = 0;
 	Cost		startup_cost = 0;
 	Cost		run_cost = 0;
 	Cost		cpu_run_cost = 0;
@@ -514,6 +516,11 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	double		pages_fetched;
 	double		rand_heap_pages;
 	double		index_pages;
+
+	// Super rough estimation of the index height if it's not provided otherwise.
+	// All indexes should be at least height 1.
+	uint32_t index_height = (index->tree_height != -1) ? index->tree_height : (index->pages > 0 ? (log(index->pages) / log(2)) : 0);
+	index_height = (index_height > 1) ? index_height : 1;
 
 	/* Should only be applied to base relations */
 	Assert(IsA(baserel, RelOptInfo) &&
@@ -726,7 +733,8 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	 */
 	csquared = indexCorrelation * indexCorrelation;
 
-	run_cost += max_IO_cost + csquared * (min_IO_cost - max_IO_cost);
+	page_est_cost = max_IO_cost + csquared * (min_IO_cost - max_IO_cost);
+	run_cost += page_est_cost;
 
 	/*
 	 * Estimate CPU costs per tuple.
@@ -760,6 +768,12 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 
 	path->path.startup_cost = startup_cost;
 	path->path.total_cost = startup_cost + run_cost;
+
+	// This estimation might prove to be wrong:
+	//   - Basically charge that we might hit the metadata page.
+	//   - Then charge that we might touch the entire tree height.
+	//   - Then charge the est I/O cost. Index scans normally don't need visibility adjustment.
+	path->path.est_pages_needed = ceil(page_est_cost / spc_random_page_cost) + index_pages + index_height + 1;
 }
 
 /*

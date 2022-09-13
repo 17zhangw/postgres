@@ -415,6 +415,7 @@ CopyScanFields(const Scan *from, Scan *newnode)
 	CopyPlanFields((const Plan *) from, (Plan *) newnode);
 
 	COPY_SCALAR_FIELD(scanrelid);
+	COPY_SCALAR_FIELD(est_pages_needed);
 }
 
 /*

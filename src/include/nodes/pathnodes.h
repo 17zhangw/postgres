@@ -1188,6 +1188,7 @@ typedef struct Path
 	double		rows;			/* estimated number of result tuples */
 	Cost		startup_cost;	/* cost expended before fetching any tuples */
 	Cost		total_cost;		/* total cost (assuming all tuples fetched) */
+	uint32_t    est_pages_needed;
 
 	List	   *pathkeys;		/* sort ordering of path's output */
 	/* pathkeys is a List of PathKey nodes; see above */
