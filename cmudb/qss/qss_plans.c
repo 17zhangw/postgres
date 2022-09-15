@@ -8,6 +8,7 @@
 #include "catalog/namespace.h"
 #include "catalog/index.h"
 #include "cmudb/qss/qss.h"
+#include "cmudb/tscout/marker.h"
 #include "commands/explain.h"
 #include "miscadmin.h"
 #include "nodes/pg_list.h"
@@ -381,7 +382,7 @@ Instrumentation* qss_AllocInstrumentation(EState* estate, const char *ou) {
 
 	if (!qss_capture_enabled ||
 		!qss_capture_exec_stats ||
-		!qss_output_noisepage) {
+		(qss_output_format != QSS_OUTPUT_FORMAT_NOISEPAGE)) {
 		// Not enabled.
 		return NULL;
 	}
@@ -409,6 +410,10 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 	bool need_instrument;
 	bool need_total;
 	nesting_level++;
+
+	if (nesting_level == 1) {
+		TS_MARKER(qss_ExecutorStart);
+	}
 
 	need_total = qss_capture_enabled && (qss_capture_nested || nesting_level == 1);
 	need_instrument = qss_capture_enabled &&
@@ -451,14 +456,18 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 	MemoryContextSwitchTo(oldcontext);
 }
 
-static void ProcessQueryExplain(QueryDesc *query_desc, bool instrument) {
+static void ProcessQueryExplain(QueryDesc *query_desc, bool instrument, bool verbose) {
 	// Setup ExplainState
 	ExplainState *es = NULL;
 	es = NewExplainState();
 	es->analyze = instrument;
-	es->verbose = true;
+	es->verbose = verbose;
 	es->timing = true;
-	es->format = EXPLAIN_FORMAT_JSON;
+	if (qss_output_format == QSS_OUTPUT_FORMAT_JSON) {
+		es->format = EXPLAIN_FORMAT_JSON;
+	} else if (qss_output_format == QSS_OUTPUT_FORMAT_TEXT) {
+		es->format = EXPLAIN_FORMAT_TEXT;
+	}
 
 	// OUtput all relevant information.
 	ExplainBeginOutput(es);
@@ -598,10 +607,15 @@ void qss_ExecutorEnd(QueryDesc *query_desc) {
 		// End the loop on this counter.
 		InstrEndLoop(query_desc->totaltime);
 
-		if (qss_output_noisepage) {
+		if (qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) {
 			ProcessQueryInternalTable(query_desc, need_instrument);
-		} else {
-			ProcessQueryExplain(query_desc, need_instrument);
+		} else if (qss_output_format == QSS_OUTPUT_FORMAT_JSON) {
+			ProcessQueryExplain(query_desc, need_instrument, true);
+		} else if (qss_output_format == QSS_OUTPUT_FORMAT_TEXT) {
+			// This gives EXPLAIN (VERBOSE)
+			ProcessQueryExplain(query_desc, false, true);
+			// This gives EXPLAIN (VERBOSE, ANALYZE)
+			ProcessQueryExplain(query_desc, need_instrument, false);
 		}
 	}
 
@@ -616,6 +630,10 @@ void qss_ExecutorEnd(QueryDesc *query_desc) {
 		qss_prev_ExecutorEnd(query_desc);
 	} else {
 		standard_ExecutorEnd(query_desc);
+	}
+
+	if (nesting_level == 1) {
+		TS_MARKER(qss_ExecutorEnd);
 	}
 
 	nesting_level--;

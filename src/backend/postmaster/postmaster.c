@@ -97,6 +97,7 @@
 #include "access/xlog.h"
 #include "bootstrap/bootstrap.h"
 #include "catalog/pg_control.h"
+#include "cmudb/tscout/marker.h"
 #include "common/file_perm.h"
 #include "common/ip.h"
 #include "common/string.h"
@@ -136,6 +137,8 @@
 #ifdef EXEC_BACKEND
 #include "storage/spin.h"
 #endif
+
+TS_DEFINE_SEMAPHORE(fork_backend);
 
 /*
  * Possible types of a backend. Beyond being the possible bkend_type values in
@@ -3224,6 +3227,7 @@ reaper(SIGNAL_ARGS)
 		 * Else do standard backend child cleanup.
 		 */
 		CleanupBackend(pid, exitstatus);
+		TS_MARKER(reap_backend, pid);
 	}							/* loop over pending child-death reports */
 
 	/*
@@ -4242,6 +4246,8 @@ BackendStartup(Port *port)
 		report_fork_failure_to_client(port, save_errno);
 		return STATUS_ERROR;
 	}
+
+	TS_MARKER_WITH_SEMAPHORE(fork_backend, pid, port->sock);
 
 	/* in parent, successful fork */
 	ereport(DEBUG2,

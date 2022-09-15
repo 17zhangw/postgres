@@ -240,6 +240,11 @@ static bool check_default_with_oids(bool *newval, void **extra, GucSource source
 static ConfigVariable *ProcessConfigFileInternal(GucContext context,
 												 bool applySettings, int elevel);
 
+static const struct config_enum_entry qss_output_format_options[] = {
+	{"noisepage", QSS_OUTPUT_FORMAT_NOISEPAGE, false},
+	{"json", QSS_OUTPUT_FORMAT_JSON, false},
+	{"text", QSS_OUTPUT_FORMAT_TEXT, false},
+};
 
 /*
  * Options for enum values defined in this module.
@@ -2135,15 +2140,6 @@ static struct config_bool ConfigureNamesBool[] =
 		},
 		&qss_capture_exec_stats,
 		false,
-		NULL, NULL, NULL
-	},
-
-	{
-		{"qss_output_noisepage", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Sets whether to collect query runtime with QSS."),
-		},
-		&qss_output_noisepage,
-		true,
 		NULL, NULL, NULL
 	},
 
@@ -4997,6 +4993,16 @@ static struct config_enum ConfigureNamesEnum[] =
 		},
 		&recovery_init_sync_method,
 		RECOVERY_INIT_SYNC_METHOD_FSYNC, recovery_init_sync_method_options,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"qss_output_format", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets the output format for qss output."),
+			NULL
+		},
+		&qss_output_format,
+		QSS_OUTPUT_FORMAT_NOISEPAGE, qss_output_format_options,
 		NULL, NULL, NULL
 	},
 

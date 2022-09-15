@@ -8,8 +8,15 @@
 extern bool qss_capture_enabled;
 extern bool qss_capture_exec_stats;
 extern bool qss_capture_nested;
-extern bool qss_output_noisepage;
 extern bool qss_capture_abort;
+
+enum qss_output_format_type
+{
+	QSS_OUTPUT_FORMAT_NOISEPAGE = 0,
+	QSS_OUTPUT_FORMAT_JSON,
+	QSS_OUTPUT_FORMAT_TEXT,
+};
+extern int qss_output_format;
 
 #define PLAN_INVALID_ID (-1)
 
