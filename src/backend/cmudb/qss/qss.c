@@ -10,9 +10,9 @@ qss_AllocInstrumentation_type qss_AllocInstrumentation_hook = NULL;
 qss_QSSAbort_type qss_QSSAbort_hook = NULL;
 Instrumentation* ActiveQSSInstrumentation = NULL;
 
-Instrumentation* AllocQSSInstrumentation(EState* estate, const char *ou) {
+Instrumentation* AllocQSSInstrumentation(EState* estate, const char *ou, bool need_timer) {
 	if (qss_capture_enabled && qss_capture_exec_stats && (qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) && qss_AllocInstrumentation_hook) {
-		return qss_AllocInstrumentation_hook(estate, ou);
+		return qss_AllocInstrumentation_hook(estate, ou, need_timer);
 	}
 
 	return NULL;

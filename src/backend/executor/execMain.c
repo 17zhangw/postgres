@@ -88,7 +88,8 @@ static void ExecutePlan(EState *estate, PlanState *planstate,
 						uint64 numberTuples,
 						ScanDirection direction,
 						DestReceiver *dest,
-						bool execute_once);
+						bool execute_once,
+						struct Instrumentation *totaltime);
 static bool ExecCheckRTEPerms(RangeTblEntry *rte);
 static bool ExecCheckRTEPermsModified(Oid relOid, Oid userid,
 									  Bitmapset *modifiedCols,
@@ -366,7 +367,8 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 					count,
 					direction,
 					dest,
-					execute_once);
+					execute_once,
+					queryDesc->totaltime);
 	}
 
 	/*
@@ -1511,7 +1513,8 @@ ExecutePlan(EState *estate,
 			uint64 numberTuples,
 			ScanDirection direction,
 			DestReceiver *dest,
-			bool execute_once)
+			bool execute_once,
+			struct Instrumentation *totaltime)
 {
 	TupleTableSlot *slot;
 	uint64		current_tuple_count;
@@ -1556,6 +1559,12 @@ ExecutePlan(EState *estate,
 		 */
 		if (TupIsNull(slot))
 			break;
+
+		// Indicate that we've pulled this many slots out.
+		if (totaltime != NULL)
+		{
+			InstrUpdateTupleCount(totaltime, 1.0);
+		}
 
 		/*
 		 * If we have a junk filter, then project a new tuple with the junk

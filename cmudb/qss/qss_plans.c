@@ -84,6 +84,22 @@
 #define STATS_TXN_IDX (22)
 #define STATS_TABLE_COMMENT_IDX 23
 
+#define STATS_COUNTER0 (STATS_COUNTER_IDX + 0)
+#define STATS_COUNTER1 (STATS_COUNTER_IDX + 1)
+#define STATS_COUNTER2 (STATS_COUNTER_IDX + 2)
+#define STATS_COUNTER3 (STATS_COUNTER_IDX + 3)
+#define STATS_COUNTER4 (STATS_COUNTER_IDX + 4)
+#define STATS_COUNTER5 (STATS_COUNTER_IDX + 5)
+#define STATS_COUNTER6 (STATS_COUNTER_IDX + 6)
+#define STATS_COUNTER7 (STATS_COUNTER_IDX + 7)
+#define STATS_COUNTER8 (STATS_COUNTER_IDX + 8)
+#define STATS_COUNTER9 (STATS_COUNTER_IDX + 9)
+#define STATS_BLK_HITS (STATS_COUNTER_IDX + 10)
+#define STATS_BLK_READ (STATS_COUNTER_IDX + 11)
+#define STATS_BLK_DIRTY (STATS_COUNTER_IDX + 12)
+#define STATS_BLK_WRITE (STATS_COUNTER_IDX + 13)
+#define STATS_PAYLOAD (STATS_COUNTER_IDX + 14)
+
 void qss_ProcessUtility(PlannedStmt *pstmt,
 						const char *queryString,
 						bool readOnlyTree,
@@ -204,21 +220,21 @@ static void WriteInstrumentation(Plan *plan, Instrumentation *instr, Relation st
 	InstrEndLoop(instr);
 	values[(STATS_PLAN_NODE_ID_IDX)] = Int32GetDatum(plan ? plan->plan_node_id : instr->plan_node_id);
 	values[(STATS_ELAPSED_US_IDX)] = Float8GetDatum(instr->total * 1000000.0);
-	values[(STATS_COUNTER_IDX + 0)] = Float8GetDatum(instr->counter0);
-	values[(STATS_COUNTER_IDX + 1)] = Float8GetDatum(instr->counter1);
-	values[(STATS_COUNTER_IDX + 2)] = Float8GetDatum(instr->counter2);
-	values[(STATS_COUNTER_IDX + 3)] = Float8GetDatum(instr->counter3);
-	values[(STATS_COUNTER_IDX + 4)] = Float8GetDatum(instr->counter4);
-	values[(STATS_COUNTER_IDX + 5)] = Float8GetDatum(instr->counter5);
-	values[(STATS_COUNTER_IDX + 6)] = Float8GetDatum(instr->counter6);
-	values[(STATS_COUNTER_IDX + 7)] = Float8GetDatum(instr->counter7);
-	values[(STATS_COUNTER_IDX + 8)] = Float8GetDatum(instr->counter8);
-	values[(STATS_COUNTER_IDX + 9)] = Float8GetDatum(instr->counter9);
-	values[(STATS_COUNTER_IDX + 10)] = Int32GetDatum(instr->bufusage.shared_blks_hit);
-	values[(STATS_COUNTER_IDX + 11)] = Int32GetDatum(instr->bufusage.shared_blks_read);
-	values[(STATS_COUNTER_IDX + 12)] = Int32GetDatum(instr->bufusage.shared_blks_dirtied);
-	values[(STATS_COUNTER_IDX + 13)] = Int32GetDatum(instr->bufusage.shared_blks_written);
-	values[(STATS_COUNTER_IDX + 14)] = Int64GetDatum(instr->payload);
+	values[STATS_COUNTER0] = Float8GetDatum(instr->counter0);
+	values[STATS_COUNTER1] = Float8GetDatum(instr->counter1);
+	values[STATS_COUNTER2] = Float8GetDatum(instr->counter2);
+	values[STATS_COUNTER3] = Float8GetDatum(instr->counter3);
+	values[STATS_COUNTER4] = Float8GetDatum(instr->counter4);
+	values[STATS_COUNTER5] = Float8GetDatum(instr->counter5);
+	values[STATS_COUNTER6] = Float8GetDatum(instr->counter6);
+	values[STATS_COUNTER7] = Float8GetDatum(instr->counter7);
+	values[STATS_COUNTER8] = Float8GetDatum(instr->counter8);
+	values[STATS_COUNTER9] = Float8GetDatum(instr->counter9);
+	values[STATS_BLK_HITS] = Int32GetDatum(instr->bufusage.shared_blks_hit);
+	values[STATS_BLK_READ] = Int32GetDatum(instr->bufusage.shared_blks_read);
+	values[STATS_BLK_DIRTY] = Int32GetDatum(instr->bufusage.shared_blks_dirtied);
+	values[STATS_BLK_WRITE] = Int32GetDatum(instr->bufusage.shared_blks_written);
+	values[STATS_PAYLOAD] = Int64GetDatum(instr->payload);
 	values[(STATS_TXN_IDX)] = TransactionIdGetDatum(GetCurrentTransactionId());
 
 	if (plan) {
@@ -372,7 +388,7 @@ void qss_xact_callback(XactEvent event, void* arg) {
 	}
 }
 
-Instrumentation* qss_AllocInstrumentation(EState* estate, const char *ou) {
+Instrumentation* qss_AllocInstrumentation(EState* estate, const char *ou, bool need_timer) {
 	MemoryContext oldcontext = NULL;
 	Instrumentation* instr = NULL;
 	if (top == NULL) {
@@ -390,7 +406,7 @@ Instrumentation* qss_AllocInstrumentation(EState* estate, const char *ou) {
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
 	instr = palloc0(sizeof(Instrumentation));
-	InstrInit(instr, INSTRUMENT_TIMER | INSTRUMENT_BUFFERS);
+	InstrInit(instr, (need_timer ? INSTRUMENT_TIMER : 0) | INSTRUMENT_BUFFERS);
 	instr->plan_node_id = PLAN_INDEPENDENT_ID;
 	instr->ou = ou;
 
@@ -409,6 +425,7 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 	struct ExecutorInstrument* exec = NULL;
 	bool need_instrument;
 	bool need_total;
+	bool capture;
 	nesting_level++;
 
 	if (nesting_level == 1) {
@@ -416,8 +433,9 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 	}
 
 	need_total = qss_capture_enabled && (qss_capture_nested || nesting_level == 1);
+	capture = (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) || (!qss_capture_exec_stats && qss_output_format != QSS_OUTPUT_FORMAT_NOISEPAGE);
 	need_instrument = qss_capture_enabled &&
-					  qss_capture_exec_stats &&
+					  capture &&
 					  (qss_capture_nested || nesting_level == 1) &&
 					  query_desc->generation >= 0 &&
 					  (!query_desc->dest || query_desc->dest->mydest != DestSQLFunction);
@@ -474,17 +492,22 @@ static void ProcessQueryExplain(QueryDesc *query_desc, bool instrument, bool ver
 	ExplainQueryText(es, query_desc);
 	ExplainPropertyInteger("start_time", NULL, top->statement_ts, es);
 	ExplainPropertyFloat("elapsed_us", NULL, query_desc->totaltime->total * 1000000.0, 9, es);
+	ExplainPropertyInteger("query_id", NULL, top->queryId, es);
+	ExplainPropertyInteger("txn", NULL, GetCurrentTransactionId(), es);
 	ExplainPrintPlan(es, query_desc);
 	if (es->analyze)
 		ExplainPrintTriggers(es, query_desc);
 	ExplainEndOutput(es);
 
-	if (es->str->len > 0 && es->str->data[es->str->len - 1] == '\n')
-		es->str->data[--es->str->len] = '\0';
+	if (qss_output_format == QSS_OUTPUT_FORMAT_JSON) {
+		if (es->str->len > 0 && es->str->data[es->str->len - 1] == '\n')
+			es->str->data[--es->str->len] = '\0';
 
-	/* Fix JSON to output an object */
-	es->str->data[0] = '{';
-	es->str->data[es->str->len - 1] = '}';
+		/* Fix JSON to output an object */
+		es->str->data[0] = '{';
+		es->str->data[es->str->len - 1] = '}';
+	}
+
 	ereport(LOG, (errmsg("%s", es->str->data), errhidestmt(true)));
 }
 
@@ -558,7 +581,13 @@ static void ProcessQueryInternalTable(QueryDesc *query_desc, bool instrument) {
 			values[STATS_PLAN_NODE_ID_IDX] = Int32GetDatum(-1);
 			values[STATS_ELAPSED_US_IDX] = Float8GetDatum(query_desc->totaltime->total * 1000000.0);
 			values[STATS_COUNTER_IDX] = Float8GetDatum(1.0);
+			values[STATS_COUNTER1] = Float8GetDatum(query_desc->totaltime->ntuples);
 			values[STATS_TXN_IDX] = TransactionIdGetDatum(GetCurrentTransactionId());
+
+			values[STATS_BLK_HITS] = Int32GetDatum(query_desc->totaltime->bufusage.shared_blks_hit);
+			values[STATS_BLK_READ] = Int32GetDatum(query_desc->totaltime->bufusage.shared_blks_read);
+			values[STATS_BLK_DIRTY] = Int32GetDatum(query_desc->totaltime->bufusage.shared_blks_dirtied);
+			values[STATS_BLK_WRITE] = Int32GetDatum(query_desc->totaltime->bufusage.shared_blks_written);
 
 			is_nulls[STATS_TABLE_COMMENT_IDX] = (top->params == NULL);
 			if (top->params != NULL) {
@@ -593,12 +622,14 @@ void qss_ExecutorEnd(QueryDesc *query_desc) {
 	MemoryContext oldcontext;
 	EState *estate = query_desc->estate;
 	bool need_instrument;
+	bool capture;
 
 	/* Switch into per-query memory context */
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
+	capture = (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) || (!qss_capture_exec_stats && qss_output_format != QSS_OUTPUT_FORMAT_NOISEPAGE);
 	need_instrument = qss_capture_enabled &&
-					  qss_capture_exec_stats &&
+					  capture &&
 					  (qss_capture_nested || nesting_level == 1) &&
 					  query_desc->generation >= 0 &&
 					  (!query_desc->dest || query_desc->dest->mydest != DestSQLFunction);
@@ -612,10 +643,8 @@ void qss_ExecutorEnd(QueryDesc *query_desc) {
 		} else if (qss_output_format == QSS_OUTPUT_FORMAT_JSON) {
 			ProcessQueryExplain(query_desc, need_instrument, true);
 		} else if (qss_output_format == QSS_OUTPUT_FORMAT_TEXT) {
-			// This gives EXPLAIN (VERBOSE)
-			ProcessQueryExplain(query_desc, false, true);
 			// This gives EXPLAIN (VERBOSE, ANALYZE)
-			ProcessQueryExplain(query_desc, need_instrument, false);
+			ProcessQueryExplain(query_desc, need_instrument, true);
 		}
 	}
 

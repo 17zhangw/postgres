@@ -31,6 +31,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
+#include "cmudb/qss/qss.h"
 #include "commands/dbcommands.h"
 #include "commands/defrem.h"
 #include "commands/trigger.h"
@@ -2334,10 +2335,24 @@ ExecARInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 
 	if ((trigdesc && trigdesc->trig_insert_after_row) ||
 		(transition_capture && transition_capture->tcs_insert_new_table))
+	{
+		Assert(ActiveQSSInstrumentation == NULL);
+		ActiveQSSInstrumentation = AllocQSSInstrumentation(estate, "TupleARInsertTriggers", true);
+		if (ActiveQSSInstrumentation) {
+			ActiveQSSInstrumentation->node_tag = T_ModifyTable;
+			InstrStartNode(ActiveQSSInstrumentation);
+		}
+
 		AfterTriggerSaveEvent(estate, relinfo, TRIGGER_EVENT_INSERT,
 							  true, NULL, slot,
 							  recheckIndexes, NULL,
 							  transition_capture);
+
+		if (ActiveQSSInstrumentation) {
+			InstrStopNode(ActiveQSSInstrumentation, 0.0);
+			ActiveQSSInstrumentation = NULL;
+		}
+	}
 }
 
 bool
@@ -2566,7 +2581,15 @@ ExecARDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 	if ((trigdesc && trigdesc->trig_delete_after_row) ||
 		(transition_capture && transition_capture->tcs_delete_old_table))
 	{
-		TupleTableSlot *slot = ExecGetTriggerOldSlot(estate, relinfo);
+		TupleTableSlot *slot = NULL;
+		Assert(ActiveQSSInstrumentation == NULL);
+		ActiveQSSInstrumentation = AllocQSSInstrumentation(estate, "TupleARDeleteTriggers", true);
+		if (ActiveQSSInstrumentation) {
+			ActiveQSSInstrumentation->node_tag = T_ModifyTable;
+			InstrStartNode(ActiveQSSInstrumentation);
+		}
+
+		slot = ExecGetTriggerOldSlot(estate, relinfo);
 
 		Assert(HeapTupleIsValid(fdw_trigtuple) ^ ItemPointerIsValid(tupleid));
 		if (fdw_trigtuple == NULL)
@@ -2583,6 +2606,11 @@ ExecARDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 		AfterTriggerSaveEvent(estate, relinfo, TRIGGER_EVENT_DELETE,
 							  true, slot, NULL, NIL, NULL,
 							  transition_capture);
+
+		if (ActiveQSSInstrumentation) {
+			InstrStopNode(ActiveQSSInstrumentation, 0.0);
+			ActiveQSSInstrumentation = NULL;
+		}
 	}
 }
 
@@ -2854,13 +2882,21 @@ ExecARUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 		 (transition_capture->tcs_update_old_table ||
 		  transition_capture->tcs_update_new_table)))
 	{
+		TupleTableSlot *oldslot = NULL;
+		Assert(ActiveQSSInstrumentation == NULL);
+		ActiveQSSInstrumentation = AllocQSSInstrumentation(estate, "TupleARUpdateTriggers", true);
+		if (ActiveQSSInstrumentation) {
+			ActiveQSSInstrumentation->node_tag = T_ModifyTable;
+			InstrStartNode(ActiveQSSInstrumentation);
+		}
+
 		/*
 		 * Note: if the UPDATE is converted into a DELETE+INSERT as part of
 		 * update-partition-key operation, then this function is also called
 		 * separately for DELETE and INSERT to capture transition table rows.
 		 * In such case, either old tuple or new tuple can be NULL.
 		 */
-		TupleTableSlot *oldslot = ExecGetTriggerOldSlot(estate, relinfo);
+		oldslot = ExecGetTriggerOldSlot(estate, relinfo);
 
 		if (fdw_trigtuple == NULL && ItemPointerIsValid(tupleid))
 			GetTupleForTrigger(estate,
@@ -2879,6 +2915,11 @@ ExecARUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 							  true, oldslot, newslot, recheckIndexes,
 							  ExecGetAllUpdatedCols(relinfo, estate),
 							  transition_capture);
+
+		if (ActiveQSSInstrumentation) {
+			InstrStopNode(ActiveQSSInstrumentation, 0.0);
+			ActiveQSSInstrumentation = NULL;
+		}
 	}
 }
 
@@ -5678,6 +5719,11 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 		if (!TriggerEnabled(estate, relinfo, trigger, event,
 							modifiedCols, oldslot, newslot))
 			continue;
+
+		// Mark counter0 if modify table trigger save event.
+		if (ActiveQSSInstrumentation != NULL && ActiveQSSInstrumentation->node_tag == T_ModifyTable) {
+			ActiveQSSInstrumentation->counter0++;
+		}
 
 		if (relkind == RELKIND_FOREIGN_TABLE && row_trigger)
 		{

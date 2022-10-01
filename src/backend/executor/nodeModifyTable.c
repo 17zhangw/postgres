@@ -992,8 +992,16 @@ ExecInsert(ModifyTableState *mtstate,
 	}
 
 	/* AFTER ROW INSERT Triggers */
+	if (qss_capture_exec_stats && mtstate->ps.instrument) {
+		InstrStopNode(mtstate->ps.instrument, 0.0);
+	}
+
 	ExecARInsertTriggers(estate, resultRelInfo, slot, recheckIndexes,
 						 ar_insert_trig_tcs);
+
+	if (qss_capture_exec_stats && mtstate->ps.instrument) {
+		InstrStartNode(mtstate->ps.instrument);
+	}
 
 	list_free(recheckIndexes);
 
@@ -1389,8 +1397,16 @@ ldelete:;
 	}
 
 	/* AFTER ROW DELETE Triggers */
+	if (qss_capture_exec_stats && mtstate->ps.instrument) {
+		InstrStopNode(mtstate->ps.instrument, 0.0);
+	}
+
 	ExecARDeleteTriggers(estate, resultRelInfo, tupleid, oldtuple,
 						 ar_delete_trig_tcs);
+
+	if (qss_capture_exec_stats && mtstate->ps.instrument) {
+		InstrStartNode(mtstate->ps.instrument);
+	}
 
 	/* Process RETURNING if present and if requested */
 	if (processReturning && resultRelInfo->ri_projectReturning)
@@ -1994,11 +2010,19 @@ lreplace:;
 		(estate->es_processed)++;
 
 	/* AFTER ROW UPDATE Triggers */
+	if (qss_capture_exec_stats && mtstate->ps.instrument) {
+		InstrStopNode(mtstate->ps.instrument, 0.0);
+	}
+
 	ExecARUpdateTriggers(estate, resultRelInfo, tupleid, oldtuple, slot,
 						 recheckIndexes,
 						 mtstate->operation == CMD_INSERT ?
 						 mtstate->mt_oc_transition_capture :
 						 mtstate->mt_transition_capture);
+
+	if (qss_capture_exec_stats && mtstate->ps.instrument) {
+		InstrStartNode(mtstate->ps.instrument);
+	}
 
 	list_free(recheckIndexes);
 

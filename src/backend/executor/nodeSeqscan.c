@@ -29,6 +29,7 @@
 
 #include "access/relscan.h"
 #include "access/tableam.h"
+#include "cmudb/qss/qss.h"
 #include "executor/execdebug.h"
 #include "executor/nodeSeqscan.h"
 #include "utils/rel.h"
@@ -77,8 +78,12 @@ SeqNext(SeqScanState *node)
 	/*
 	 * get the next tuple from the table
 	 */
+	ActiveQSSInstrumentation = node->ss.ps.instrument;
 	if (table_scan_getnextslot(scandesc, direction, slot))
+	{
+		QSSInstrumentAddCounter(node, 0, 1);
 		return slot;
+	}
 	return NULL;
 }
 
