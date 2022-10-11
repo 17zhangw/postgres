@@ -66,6 +66,8 @@
 #include "utils/ruleutils.h"
 #include "utils/snapmgr.h"
 
+#include "cmudb/tscout/marker.h"
+
 
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
 ExecutorStart_hook_type ExecutorStart_hook = NULL;
@@ -331,7 +333,13 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 
 	/* Allow instrumentation of Executor overall runtime */
 	if (queryDesc->totaltime)
+	{
 		InstrStartNode(queryDesc->totaltime);
+		if (queryDesc->nesting_level == 1)
+		{
+			TS_MARKER(qss_ExecutorStart);
+		}
+	}
 
 	/*
 	 * extract information from the query descriptor and the query feature.
@@ -378,7 +386,13 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		dest->rShutdown(dest);
 
 	if (queryDesc->totaltime)
+	{
+		if (queryDesc->nesting_level == 1) {
+			TS_MARKER(qss_Block);
+		}
+
 		InstrStopNode(queryDesc->totaltime, estate->es_processed);
+	}
 
 	MemoryContextSwitchTo(oldcontext);
 }
@@ -428,7 +442,13 @@ standard_ExecutorFinish(QueryDesc *queryDesc)
 
 	/* Allow instrumentation of Executor overall runtime */
 	if (queryDesc->totaltime)
+	{
 		InstrStartNode(queryDesc->totaltime);
+		if (queryDesc->nesting_level == 1)
+		{
+			TS_MARKER(qss_Unblock);
+		}
+	}
 
 	/* Run ModifyTable nodes to completion */
 	ExecPostprocessPlan(estate);
@@ -438,7 +458,13 @@ standard_ExecutorFinish(QueryDesc *queryDesc)
 		AfterTriggerEndQuery(estate);
 
 	if (queryDesc->totaltime)
+	{
+		if (queryDesc->nesting_level == 1) {
+			TS_MARKER(qss_ExecutorEnd);
+		}
+
 		InstrStopNode(queryDesc->totaltime, 0);
+	}
 
 	MemoryContextSwitchTo(oldcontext);
 

@@ -428,10 +428,7 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 	bool capture;
 	nesting_level++;
 
-	if (nesting_level == 1) {
-		TS_MARKER(qss_ExecutorStart);
-	}
-
+	query_desc->nesting_level = nesting_level;
 	need_total = qss_capture_enabled && (qss_capture_nested || nesting_level == 1);
 	capture = (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) || (!qss_capture_exec_stats && qss_output_format != QSS_OUTPUT_FORMAT_NOISEPAGE);
 	need_instrument = qss_capture_enabled &&
@@ -659,10 +656,6 @@ void qss_ExecutorEnd(QueryDesc *query_desc) {
 		qss_prev_ExecutorEnd(query_desc);
 	} else {
 		standard_ExecutorEnd(query_desc);
-	}
-
-	if (nesting_level == 1) {
-		TS_MARKER(qss_ExecutorEnd);
 	}
 
 	nesting_level--;
