@@ -119,7 +119,7 @@ printtup_startup(DestReceiver *self, int operation, TupleDesc typeinfo, uint64_t
 	Portal		portal = myState->portal;
 	if (qss_capture_enabled && qss_capture_exec_stats && queryId != UINT64CONST(0)) {
 		myState->track = true;
-		myState->instr = AllocQSSInstrumentation(es, "DestReceiverRemote", true);
+		myState->instr = AllocQSSInstrumentation("DestReceiverRemote", true);
 		if (myState->instr) {
 			InstrStartNode(myState->instr);
 		} else {

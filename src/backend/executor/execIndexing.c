@@ -345,7 +345,7 @@ ExecInsertIndexTuples(ResultRelInfo *resultRelInfo,
 			continue;
 
 		if (qss_capture_exec_stats) {
-			ActiveQSSInstrumentation = AllocQSSInstrumentation(estate, "ModifyTableIndexInsert", true);
+			ActiveQSSInstrumentation = AllocQSSInstrumentation("ModifyTableIndexInsert", true);
 			if (ActiveQSSInstrumentation) {
 				ActiveQSSInstrumentation->payload = (int64_t)indexRelation->rd_id;
 				InstrStartNode(ActiveQSSInstrumentation);

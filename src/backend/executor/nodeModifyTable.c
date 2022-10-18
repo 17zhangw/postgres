@@ -949,7 +949,7 @@ ExecInsert(ModifyTableState *mtstate,
 					}
 
 					if (mtstate->ps.instrument) {
-							InstrStopNode(mtstate->ps.instrument, 0.0);
+						InstrStopNode(mtstate->ps.instrument, 0.0);
 					}
 
 				}

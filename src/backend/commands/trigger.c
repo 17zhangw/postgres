@@ -2337,7 +2337,7 @@ ExecARInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 		(transition_capture && transition_capture->tcs_insert_new_table))
 	{
 		Assert(ActiveQSSInstrumentation == NULL);
-		ActiveQSSInstrumentation = AllocQSSInstrumentation(estate, "TupleARInsertTriggers", true);
+		ActiveQSSInstrumentation = AllocQSSInstrumentation("TupleARInsertTriggers", true);
 		if (ActiveQSSInstrumentation) {
 			ActiveQSSInstrumentation->node_tag = T_ModifyTable;
 			InstrStartNode(ActiveQSSInstrumentation);
@@ -2583,7 +2583,7 @@ ExecARDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 	{
 		TupleTableSlot *slot = NULL;
 		Assert(ActiveQSSInstrumentation == NULL);
-		ActiveQSSInstrumentation = AllocQSSInstrumentation(estate, "TupleARDeleteTriggers", true);
+		ActiveQSSInstrumentation = AllocQSSInstrumentation("TupleARDeleteTriggers", true);
 		if (ActiveQSSInstrumentation) {
 			ActiveQSSInstrumentation->node_tag = T_ModifyTable;
 			InstrStartNode(ActiveQSSInstrumentation);
@@ -2884,7 +2884,7 @@ ExecARUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 	{
 		TupleTableSlot *oldslot = NULL;
 		Assert(ActiveQSSInstrumentation == NULL);
-		ActiveQSSInstrumentation = AllocQSSInstrumentation(estate, "TupleARUpdateTriggers", true);
+		ActiveQSSInstrumentation = AllocQSSInstrumentation("TupleARUpdateTriggers", true);
 		if (ActiveQSSInstrumentation) {
 			ActiveQSSInstrumentation->node_tag = T_ModifyTable;
 			InstrStartNode(ActiveQSSInstrumentation);
@@ -4122,6 +4122,8 @@ AfterTriggerExecute(EState *estate,
 	 */
 	if (instr)
 		InstrStopNode(instr + tgindx, 1);
+
+	ActiveQSSInstrumentAddCounter(0, 1);
 }
 
 
@@ -4635,6 +4637,13 @@ AfterTriggerEndQuery(EState *estate)
 	 */
 	qs = &afterTriggers.query_stack[afterTriggers.query_depth];
 
+	Assert(ActiveQSSInstrumentation == NULL);
+	ActiveQSSInstrumentation = AllocQSSInstrumentation("AfterTriggerEndQuery", true);
+	if (ActiveQSSInstrumentation)
+	{
+		InstrStartNode(ActiveQSSInstrumentation);
+	}
+
 	for (;;)
 	{
 		if (afterTriggerMarkEvents(&qs->events, &afterTriggers.events, true))
@@ -4676,6 +4685,12 @@ AfterTriggerEndQuery(EState *estate)
 	AfterTriggerFreeQuery(&afterTriggers.query_stack[afterTriggers.query_depth]);
 
 	afterTriggers.query_depth--;
+
+	if (ActiveQSSInstrumentation)
+	{
+		InstrStopNode(ActiveQSSInstrumentation, 0.0);
+		ActiveQSSInstrumentation = NULL;
+	}
 }
 
 

@@ -82,8 +82,10 @@ SeqNext(SeqScanState *node)
 	if (table_scan_getnextslot(scandesc, direction, slot))
 	{
 		QSSInstrumentAddCounter(node, 0, 1);
+		ActiveQSSInstrumentation = NULL;
 		return slot;
 	}
+	ActiveQSSInstrumentation = NULL;
 	return NULL;
 }
 

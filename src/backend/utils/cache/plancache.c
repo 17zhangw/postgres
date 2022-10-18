@@ -58,6 +58,7 @@
 
 #include "access/transam.h"
 #include "catalog/namespace.h"
+#include "cmudb/qss/qss.h"
 #include "executor/executor.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
@@ -1168,6 +1169,7 @@ GetCachedPlan(CachedPlanSource *plansource, ParamListInfo boundParams,
 		}
 		else
 		{
+			ActiveQSSInstrumentAddCounter(2, 1);
 			/* Build a new generic plan */
 			plan = BuildCachedPlan(plansource, qlist, NULL, queryEnv);
 			/* Just make real sure plansource->gplan is clear */
@@ -1213,6 +1215,7 @@ GetCachedPlan(CachedPlanSource *plansource, ParamListInfo boundParams,
 
 	if (customplan)
 	{
+		ActiveQSSInstrumentAddCounter(3, 1);
 		/* Build a custom plan */
 		plan = BuildCachedPlan(plansource, qlist, boundParams, queryEnv);
 		/* Accumulate total costs of custom plans */

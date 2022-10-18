@@ -2294,6 +2294,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 	ErrorContextCallback spierrcontext;
 	CachedPlan *cplan = NULL;
 	ListCell   *lc1;
+	Instrumentation* saved = ActiveQSSInstrumentation;
 
 	/*
 	 * Setup error traceback support for ereport()
@@ -2524,6 +2525,12 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 				else
 					snap = InvalidSnapshot;
 
+				if (saved != NULL)
+				{
+					InstrStopNode(saved, 0.0);
+					ActiveQSSInstrumentation = NULL;
+				}
+
 				qdesc = CreateQueryDesc(stmt,
 										plansource->query_string,
 										cplan->generation,
@@ -2534,11 +2541,18 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 				res = _SPI_pquery(qdesc, fire_triggers,
 								  canSetTag ? tcount : 0);
 				FreeQueryDesc(qdesc);
+
+				if (saved != NULL)
+				{
+					InstrStartNode(saved);
+					ActiveQSSInstrumentation = saved;
+				}
 			}
 			else
 			{
 				ProcessUtilityContext context;
 				QueryCompletion qc;
+				Assert(saved == NULL);
 
 				/*
 				 * If the SPI context is atomic, or we were not told to allow

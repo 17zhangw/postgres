@@ -25,13 +25,13 @@ extern int qss_output_format;
 // action's counters are separate from any other action when using this ID.
 #define PLAN_INDEPENDENT_ID (-2)
 
-typedef Instrumentation* (*qss_AllocInstrumentation_type) (struct EState* estate, const char *ou, bool need_timer);
+typedef Instrumentation* (*qss_AllocInstrumentation_type) (const char *ou, bool need_timer);
 typedef void (*qss_QSSAbort_type)(void);
 extern PGDLLIMPORT qss_AllocInstrumentation_type qss_AllocInstrumentation_hook;
 extern PGDLLIMPORT qss_QSSAbort_type qss_QSSAbort_hook;
 extern PGDLLIMPORT Instrumentation* ActiveQSSInstrumentation;
 
-Instrumentation* AllocQSSInstrumentation(EState* estate, const char *ou, bool need_timer);
+Instrumentation* AllocQSSInstrumentation(const char *ou, bool need_timer);
 void QSSAbort(void);
 
 #define QSSInstrumentAddCounter(node, i, val)                                                       \

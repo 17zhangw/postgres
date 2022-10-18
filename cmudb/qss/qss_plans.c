@@ -291,6 +291,8 @@ struct ExecutorInstrument {
 	char* params;
 	TimestampTz statement_ts;
 
+	bool capture;
+	EState* estate;
 	List* statement_instrs;
 	struct ExecutorInstrument* prev;
 };
@@ -388,7 +390,7 @@ void qss_xact_callback(XactEvent event, void* arg) {
 	}
 }
 
-Instrumentation* qss_AllocInstrumentation(EState* estate, const char *ou, bool need_timer) {
+Instrumentation* qss_AllocInstrumentation(const char *ou, bool need_timer) {
 	MemoryContext oldcontext = NULL;
 	Instrumentation* instr = NULL;
 	if (top == NULL) {
@@ -398,12 +400,13 @@ Instrumentation* qss_AllocInstrumentation(EState* estate, const char *ou, bool n
 
 	if (!qss_capture_enabled ||
 		!qss_capture_exec_stats ||
-		(qss_output_format != QSS_OUTPUT_FORMAT_NOISEPAGE)) {
+		(qss_output_format != QSS_OUTPUT_FORMAT_NOISEPAGE) ||
+		!top->capture) {
 		// Not enabled.
 		return NULL;
 	}
 
-	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
+	oldcontext = MemoryContextSwitchTo(top->estate->es_query_cxt);
 
 	instr = palloc0(sizeof(Instrumentation));
 	InstrInit(instr, (need_timer ? INSTRUMENT_TIMER : 0) | INSTRUMENT_BUFFERS);
@@ -429,6 +432,7 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 	nesting_level++;
 
 	query_desc->nesting_level = nesting_level;
+
 	need_total = qss_capture_enabled && (qss_capture_nested || nesting_level == 1);
 	capture = (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) || (!qss_capture_exec_stats && qss_output_format != QSS_OUTPUT_FORMAT_NOISEPAGE);
 	need_instrument = qss_capture_enabled &&
@@ -457,6 +461,8 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 	exec->statement_ts = GetCurrentStatementStartTimestamp();
 	exec->queryId = query_desc->plannedstmt->queryId;
 	exec->generation = query_desc->generation;
+	exec->capture = need_instrument;
+	exec->estate = query_desc->estate;
 	if (query_desc->params != NULL) {
 		exec->params = BuildParamLogString(query_desc->params, NULL, -1);
 	}
@@ -618,30 +624,19 @@ static void ProcessQueryInternalTable(QueryDesc *query_desc, bool instrument) {
 void qss_ExecutorEnd(QueryDesc *query_desc) {
 	MemoryContext oldcontext;
 	EState *estate = query_desc->estate;
-	bool need_instrument;
-	bool capture;
 
 	/* Switch into per-query memory context */
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
-
-	capture = (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) || (!qss_capture_exec_stats && qss_output_format != QSS_OUTPUT_FORMAT_NOISEPAGE);
-	need_instrument = qss_capture_enabled &&
-					  capture &&
-					  (qss_capture_nested || nesting_level == 1) &&
-					  query_desc->generation >= 0 &&
-					  (!query_desc->dest || query_desc->dest->mydest != DestSQLFunction);
+	Assert(query_desc->nesting_level == nesting_level);
 
 	if (qss_capture_enabled && query_desc->totaltime != NULL && top != NULL) {
 		// End the loop on this counter.
 		InstrEndLoop(query_desc->totaltime);
 
 		if (qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) {
-			ProcessQueryInternalTable(query_desc, need_instrument);
-		} else if (qss_output_format == QSS_OUTPUT_FORMAT_JSON) {
-			ProcessQueryExplain(query_desc, need_instrument, true);
-		} else if (qss_output_format == QSS_OUTPUT_FORMAT_TEXT) {
-			// This gives EXPLAIN (VERBOSE, ANALYZE)
-			ProcessQueryExplain(query_desc, need_instrument, true);
+			ProcessQueryInternalTable(query_desc, top->capture);
+		} else if (qss_output_format == QSS_OUTPUT_FORMAT_JSON || qss_output_format == QSS_OUTPUT_FORMAT_TEXT) {
+			ProcessQueryExplain(query_desc, top->capture, true);
 		}
 	}
 
