@@ -100,6 +100,47 @@
 #define STATS_BLK_WRITE (STATS_COUNTER_IDX + 13)
 #define STATS_PAYLOAD (STATS_COUNTER_IDX + 14)
 
+static void qss_InsertDDLRecord(const char* queryString, const char* command) {
+	// Create the memory context that we need to use.
+	Oid ddl_table_oid = RelnameGetRelid(DDL_TABLE_NAME);
+	if (ddl_table_oid > 0) {
+		MemoryContext tmpCtx = AllocSetContextCreate(qss_MemoryContext,
+				"qss_UtilityContext",
+				ALLOCSET_DEFAULT_SIZES);
+		MemoryContext old = MemoryContextSwitchTo(tmpCtx);
+
+		// Initialize all the heap tuple values.
+		Datum values[DDL_TABLE_COLUMNS];
+		bool is_nulls[DDL_TABLE_COLUMNS];
+		Relation ddl_table_relation = table_open(ddl_table_oid, RowExclusiveLock);
+		HeapTuple heap_tup = NULL;
+		memset(values, 0, sizeof(values));
+		memset(is_nulls, 0, sizeof(is_nulls));
+
+		values[0] = ObjectIdGetDatum(MyDatabaseId);
+		values[1] = Int64GetDatumFast(GetCurrentStatementStartTimestamp());
+
+		is_nulls[2] = false;
+		values[2] = CStringGetTextDatum(queryString);
+
+		is_nulls[3] = false;
+		values[3] = CStringGetTextDatum(command);
+
+		heap_tup = heap_form_tuple(ddl_table_relation->rd_att, values, is_nulls);
+		do_heap_insert(ddl_table_relation, heap_tup,
+				GetCurrentTransactionId(),
+				GetCurrentCommandId(true),
+				HEAP_INSERT_FROZEN,
+				NULL);
+		pfree(heap_tup);
+
+		// Purge the memory contexts.
+		table_close(ddl_table_relation, RowExclusiveLock);
+		MemoryContextSwitchTo(old);
+		MemoryContextDelete(tmpCtx);
+	}
+}
+
 void qss_ProcessUtility(PlannedStmt *pstmt,
 						const char *queryString,
 						bool readOnlyTree,
@@ -109,56 +150,33 @@ void qss_ProcessUtility(PlannedStmt *pstmt,
 						DestReceiver *dest,
 						QueryCompletion *qc) {
 	Node *parsetree = pstmt->utilityStmt;
-	if (nodeTag(parsetree) == T_AlterTableStmt && queryString != NULL) {
-		// Try to find out whether this is an ALTER TABLE [table] SET options.
-		bool set = false;
-		ListCell *cell = NULL;
-		AlterTableStmt *astmt = (AlterTableStmt *)parsetree;
-		foreach (cell, astmt->cmds) {
-			AlterTableCmd *cmd = (AlterTableCmd *)lfirst(cell);
-			if (cmd->subtype == AT_SetRelOptions) {
-				set = true;
-				break;
+	if (qss_capture_enabled)
+	{
+		if (nodeTag(parsetree) == T_AlterTableStmt && queryString != NULL) {
+			// Try to find out whether this is an ALTER TABLE [table] SET options.
+			bool set = false;
+			ListCell *cell = NULL;
+			AlterTableStmt *astmt = (AlterTableStmt *)parsetree;
+			foreach (cell, astmt->cmds) {
+				AlterTableCmd *cmd = (AlterTableCmd *)lfirst(cell);
+				if (cmd->subtype == AT_SetRelOptions) {
+					set = true;
+					break;
+				}
+			}
+
+			if (set) {
+				qss_InsertDDLRecord(queryString, "AlterTableOptions");
 			}
 		}
-
-		if (set) {
-			// Create the memory context that we need to use.
-			MemoryContext tmpCtx = AllocSetContextCreate(qss_MemoryContext,
-														 "qss_UtilityContext",
-														 ALLOCSET_DEFAULT_SIZES);
-			MemoryContext old = MemoryContextSwitchTo(tmpCtx);
-
-			// Initialize all the heap tuple values.
-			Datum values[DDL_TABLE_COLUMNS];
-			bool is_nulls[DDL_TABLE_COLUMNS];
-			Oid ddl_table_oid = RelnameGetRelid(DDL_TABLE_NAME);
-			Relation ddl_table_relation = table_open(ddl_table_oid, RowExclusiveLock);
-			HeapTuple heap_tup = NULL;
-			memset(values, 0, sizeof(values));
-			memset(is_nulls, 0, sizeof(is_nulls));
-
-			values[0] = ObjectIdGetDatum(MyDatabaseId);
-			values[1] = Int64GetDatumFast(GetCurrentStatementStartTimestamp());
-
-			is_nulls[2] = false;
-			values[2] = CStringGetTextDatum(queryString);
-
-			is_nulls[3] = false;
-			values[3] = CStringGetTextDatum("AlterTableOptions");
-
-			heap_tup = heap_form_tuple(ddl_table_relation->rd_att, values, is_nulls);
-			do_heap_insert(ddl_table_relation, heap_tup,
-						   GetCurrentTransactionId(),
-						   GetCurrentCommandId(true),
-						   HEAP_INSERT_FROZEN,
-						   NULL);
-			pfree(heap_tup);
-
-			// Purge the memory contexts.
-			table_close(ddl_table_relation, RowExclusiveLock);
-			MemoryContextSwitchTo(old);
-			MemoryContextDelete(tmpCtx);
+		else if (nodeTag(parsetree) == T_IndexStmt && queryString != NULL) {
+			qss_InsertDDLRecord(queryString, "CreateIndex");
+		}
+		else if (nodeTag(parsetree) == T_DropStmt && queryString != NULL) {
+			DropStmt *dstmt = (DropStmt*)parsetree;
+			if (dstmt->removeType == OBJECT_INDEX) {
+				qss_InsertDDLRecord(queryString, "DropIndex");
+			}
 		}
 	}
 
