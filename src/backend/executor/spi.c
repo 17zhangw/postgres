@@ -149,6 +149,7 @@ SPI_connect_ext(int options)
 	_SPI_current->outer_processed = SPI_processed;
 	_SPI_current->outer_tuptable = SPI_tuptable;
 	_SPI_current->outer_result = SPI_result;
+	_SPI_current->instr = NULL;
 
 	/*
 	 * Create memory contexts for this procedure
@@ -2020,6 +2021,15 @@ spi_dest_startup(DestReceiver *self, int operation, TupleDesc typeinfo, uint64_t
 	if (_SPI_current->tuptable != NULL)
 		elog(ERROR, "improper call to spi_dest_startup");
 
+	if (qss_capture_enabled && qss_capture_exec_stats && queryId != UINT64CONST(0))
+	{
+		_SPI_current->instr = AllocQSSInstrumentation("DestReceiverSPI", true);
+		if (_SPI_current->instr)
+		{
+			InstrStartNode(_SPI_current->instr);
+		}
+	}
+
 	/* We create the tuple table context as a child of procCxt */
 
 	oldcxt = _SPI_procmem();	/* switch to procedure memory context */
@@ -2048,6 +2058,10 @@ spi_dest_startup(DestReceiver *self, int operation, TupleDesc typeinfo, uint64_t
 	tuptable->tupdesc = CreateTupleDescCopy(typeinfo);
 
 	MemoryContextSwitchTo(oldcxt);
+	if (_SPI_current->instr != NULL)
+	{
+		InstrStopNode(_SPI_current->instr, 0.0);
+	}
 }
 
 /*
@@ -2068,6 +2082,12 @@ spi_printtup(TupleTableSlot *slot, DestReceiver *self)
 	if (tuptable == NULL)
 		elog(ERROR, "improper call to spi_printtup");
 
+	if (_SPI_current->instr)
+	{
+		InstrStartNode(_SPI_current->instr);
+		QSSInstrumentAddCounterDirect(_SPI_current->instr, 0, 1);
+	}
+
 	oldcxt = MemoryContextSwitchTo(tuptable->tuptabcxt);
 
 	if (tuptable->numvals >= tuptable->alloced)
@@ -2084,6 +2104,10 @@ spi_printtup(TupleTableSlot *slot, DestReceiver *self)
 	(tuptable->numvals)++;
 
 	MemoryContextSwitchTo(oldcxt);
+	if (_SPI_current->instr)
+	{
+		InstrStopNode(_SPI_current->instr, 0.0);
+	}
 
 	return true;
 }
@@ -2294,7 +2318,6 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 	ErrorContextCallback spierrcontext;
 	CachedPlan *cplan = NULL;
 	ListCell   *lc1;
-	Instrumentation* saved = ActiveQSSInstrumentation;
 
 	/*
 	 * Setup error traceback support for ereport()
@@ -2525,12 +2548,6 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 				else
 					snap = InvalidSnapshot;
 
-				if (saved != NULL)
-				{
-					InstrStopNode(saved, 0.0);
-					ActiveQSSInstrumentation = NULL;
-				}
-
 				qdesc = CreateQueryDesc(stmt,
 										plansource->query_string,
 										cplan->generation,
@@ -2541,12 +2558,6 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 				res = _SPI_pquery(qdesc, fire_triggers,
 								  canSetTag ? tcount : 0);
 				FreeQueryDesc(qdesc);
-
-				if (saved != NULL)
-				{
-					InstrStartNode(saved);
-					ActiveQSSInstrumentation = saved;
-				}
 			}
 			else
 			{
@@ -2726,6 +2737,7 @@ _SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount)
 	int			operation = queryDesc->operation;
 	int			eflags;
 	int			res;
+	Instrumentation* saved = ActiveQSSInstrumentation;
 
 	switch (operation)
 	{
@@ -2771,6 +2783,12 @@ _SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount)
 	else
 		eflags = EXEC_FLAG_SKIP_TRIGGERS;
 
+	if (saved != NULL)
+	{
+		InstrStopNode(saved, 0.0);
+		ActiveQSSInstrumentation = NULL;
+	}
+
 	ExecutorStart(queryDesc, eflags);
 	ExecutorRun(queryDesc, ForwardScanDirection, tcount, true);
 
@@ -2786,6 +2804,12 @@ _SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount)
 	ExecutorFinish(queryDesc);
 	ExecutorEnd(queryDesc);
 	/* FreeQueryDesc is done by the caller */
+
+	if (saved != NULL)
+	{
+		InstrStartNode(saved);
+		ActiveQSSInstrumentation = saved;
+	}
 
 #ifdef SPI_EXECUTOR_STATS
 	if (ShowExecutorStats)

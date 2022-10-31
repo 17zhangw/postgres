@@ -911,6 +911,15 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	IndexScanState *indexstate;
 	Relation	currentRelation;
 	LOCKMODE	lockmode;
+	Instrumentation *instr = NULL;
+	if (qss_capture_nested && (~(eflags & EXEC_FLAG_EXPLAIN_ONLY)))
+	{
+		instr = AllocQSSInstrumentation("InitIndexScan", true);
+		if (instr != NULL)
+		{
+			InstrStartNode(instr);
+		}
+	}
 
 	/*
 	 * create state structure
@@ -971,7 +980,10 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	 * references to nonexistent indexes.
 	 */
 	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
+	{
+		Assert(instr == NULL);
 		return indexstate;
+	}
 
 	/* Open the index relation. */
 	lockmode = exec_rt_fetch(node->scan.scanrelid, estate)->rellockmode;
@@ -1086,6 +1098,14 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	else
 	{
 		indexstate->iss_RuntimeContext = NULL;
+	}
+
+	if (instr != NULL)
+	{
+		QSSInstrumentAddCounterDirect(instr, 0, indexstate->iss_NumScanKeys);
+		QSSInstrumentAddCounterDirect(instr, 1, indexstate->iss_NumRuntimeKeys);
+		QSSInstrumentAddCounterDirect(instr, 2, indexstate->iss_NumOrderByKeys);
+		InstrStopNode(instr, 0.0);
 	}
 
 	/*

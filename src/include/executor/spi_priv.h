@@ -46,6 +46,8 @@ typedef struct
 	uint64		outer_processed;
 	SPITupleTable *outer_tuptable;
 	int			outer_result;
+
+	Instrumentation *instr;
 } _SPI_connection;
 
 /*

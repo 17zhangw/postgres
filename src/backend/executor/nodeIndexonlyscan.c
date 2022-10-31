@@ -499,6 +499,15 @@ ExecInitIndexOnlyScan(IndexOnlyScan *node, EState *estate, int eflags)
 	Relation	currentRelation;
 	LOCKMODE	lockmode;
 	TupleDesc	tupDesc;
+	Instrumentation *instr = NULL;
+	if (qss_capture_nested && (~(eflags & EXEC_FLAG_EXPLAIN_ONLY)))
+	{
+		instr = AllocQSSInstrumentation("InitIndexOnlyScan", true);
+		if (instr != NULL)
+		{
+			InstrStartNode(instr);
+		}
+	}
 
 	/*
 	 * create state structure
@@ -625,6 +634,14 @@ ExecInitIndexOnlyScan(IndexOnlyScan *node, EState *estate, int eflags)
 	else
 	{
 		indexstate->ioss_RuntimeContext = NULL;
+	}
+
+	if (instr != NULL)
+	{
+		QSSInstrumentAddCounterDirect(instr, 0, indexstate->ioss_NumScanKeys);
+		QSSInstrumentAddCounterDirect(instr, 1, indexstate->ioss_NumRuntimeKeys);
+		QSSInstrumentAddCounterDirect(instr, 2, indexstate->ioss_NumOrderByKeys);
+		InstrStopNode(instr, 0.0);
 	}
 
 	/*

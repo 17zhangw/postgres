@@ -66,6 +66,7 @@
 #include "utils/ruleutils.h"
 #include "utils/snapmgr.h"
 
+#include "cmudb/qss/qss.h"
 #include "cmudb/tscout/marker.h"
 
 
@@ -79,7 +80,7 @@ ExecutorEnd_hook_type ExecutorEnd_hook = NULL;
 ExecutorCheckPerms_hook_type ExecutorCheckPerms_hook = NULL;
 
 /* decls for local routines only used within this module */
-static void InitPlan(QueryDesc *queryDesc, int eflags);
+static void InitPlan(QueryDesc *queryDesc, int eflags, Instrumentation *instr);
 static void CheckValidRowMarkRel(Relation rel, RowMarkType markType);
 static void ExecPostprocessPlan(EState *estate);
 static void ExecEndPlan(PlanState *planstate, EState *estate);
@@ -151,6 +152,15 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
 	EState	   *estate;
 	MemoryContext oldcontext;
+	Instrumentation *instr = NULL;
+	if (qss_capture_nested)
+	{
+		instr = AllocQSSInstrumentation("ExecutorStart", true);
+		if (instr != NULL)
+		{
+			InstrStartNode(instr);
+		}
+	}
 
 	/* sanity checks: queryDesc must not be started already */
 	Assert(queryDesc != NULL);
@@ -263,9 +273,13 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	/*
 	 * Initialize the plan state tree
 	 */
-	InitPlan(queryDesc, eflags);
+	InitPlan(queryDesc, eflags, instr);
 
 	MemoryContextSwitchTo(oldcontext);
+	if (instr != NULL)
+	{
+		InstrStopNode(instr, 0.0);
+	}
 }
 
 /* ----------------------------------------------------------------
@@ -828,7 +842,7 @@ ExecCheckXactReadOnly(PlannedStmt *plannedstmt)
  * ----------------------------------------------------------------
  */
 static void
-InitPlan(QueryDesc *queryDesc, int eflags)
+InitPlan(QueryDesc *queryDesc, int eflags, Instrumentation *instr)
 {
 	CmdType		operation = queryDesc->operation;
 	PlannedStmt *plannedstmt = queryDesc->plannedstmt;
@@ -914,6 +928,11 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 				   estate->es_rowmarks[erm->rti - 1] == NULL);
 
 			estate->es_rowmarks[erm->rti - 1] = erm;
+
+			if (instr != NULL)
+			{
+				QSSInstrumentAddCounterDirect(instr, 0, 1);
+			}
 		}
 	}
 
@@ -948,11 +967,22 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 		if (bms_is_member(i, plannedstmt->rewindPlanIDs))
 			sp_eflags |= EXEC_FLAG_REWIND;
 
+		if (instr != NULL)
+		{
+			InstrStopNode(instr, 0.0);
+		}
+
 		subplanstate = ExecInitNode(subplan, estate, sp_eflags);
+
+		if (instr != NULL)
+		{
+			InstrStartNode(instr);
+		}
 
 		estate->es_subplanstates = lappend(estate->es_subplanstates,
 										   subplanstate);
 
+		QSSInstrumentAddCounterDirect(instr, 1, 1);
 		i++;
 	}
 
@@ -961,7 +991,17 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	 * tree.  This opens files, allocates storage and leaves us ready to start
 	 * processing tuples.
 	 */
+	if (instr != NULL)
+	{
+		InstrStopNode(instr, 0.0);
+	}
+
 	planstate = ExecInitNode(plan, estate, eflags);
+
+	if (instr != NULL)
+	{
+		InstrStartNode(instr);
+	}
 
 	/*
 	 * Get the tuple descriptor describing the type of tuples to return.

@@ -43,6 +43,13 @@ void QSSAbort(void);
 		}                                                                                           \
 	} while(0)
 
+#define QSSInstrumentAddCounterDirect(inst, i, val)                                                 \
+	do {                                                                                            \
+		if (inst && qss_capture_exec_stats) {                                                       \
+			inst->counter##i += val;                                                                \
+		}                                                                                           \
+	} while(0)
+
 #define ActiveQSSInstrumentAddCounter(i, val)                                                       \
 	do {                                                                                            \
 		Instrumentation* inst = (Instrumentation*)ActiveQSSInstrumentation;                         \

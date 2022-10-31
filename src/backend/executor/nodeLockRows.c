@@ -303,6 +303,15 @@ ExecInitLockRows(LockRows *node, EState *estate, int eflags)
 	Plan	   *outerPlan = outerPlan(node);
 	List	   *epq_arowmarks;
 	ListCell   *lc;
+	Instrumentation *instr = NULL;
+	if (qss_capture_nested)
+	{
+		instr = AllocQSSInstrumentation("InitLockRows", true);
+		if (instr != NULL)
+		{
+			InstrStartNode(instr);
+		}
+	}
 
 	/* check for unsupported flags */
 	Assert(!(eflags & EXEC_FLAG_MARK));
@@ -330,7 +339,17 @@ ExecInitLockRows(LockRows *node, EState *estate, int eflags)
 	/*
 	 * then initialize outer plan
 	 */
+	if (instr != NULL)
+	{
+		InstrStopNode(instr, 0.0);
+	}
+
 	outerPlanState(lrstate) = ExecInitNode(outerPlan, estate, eflags);
+
+	if (instr != NULL)
+	{
+		InstrStartNode(instr);
+	}
 
 	/* node returns unmodified slots from the outer plan */
 	lrstate->ps.resultopsset = true;
@@ -374,11 +393,18 @@ ExecInitLockRows(LockRows *node, EState *estate, int eflags)
 			lrstate->lr_arowMarks = lappend(lrstate->lr_arowMarks, aerm);
 		else
 			epq_arowmarks = lappend(epq_arowmarks, aerm);
+
+		QSSInstrumentAddCounterDirect(instr, 0, 1);
 	}
 
 	/* Now we have the info needed to set up EPQ state */
 	EvalPlanQualInit(&lrstate->lr_epqstate, estate,
 					 outerPlan, epq_arowmarks, node->epqParam);
+
+	if (instr != NULL)
+	{
+		InstrStopNode(instr, 0.0);
+	}
 
 	return lrstate;
 }
