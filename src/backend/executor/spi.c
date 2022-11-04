@@ -2563,7 +2563,6 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 			{
 				ProcessUtilityContext context;
 				QueryCompletion qc;
-				Assert(saved == NULL);
 
 				/*
 				 * If the SPI context is atomic, or we were not told to allow

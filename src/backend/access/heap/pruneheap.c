@@ -241,6 +241,10 @@ heap_page_prune(Relation relation, Buffer buffer,
 		ActiveQSSInstrumentAddCounter(1, 1);
 	}
 
+	if (ActiveQSSInstrumentation && ActiveQSSInstrumentation->node_tag == T_BitmapHeapScan) {
+		ActiveQSSInstrumentAddCounter(4, 1);
+	}
+
 	/*
 	 * Our strategy is to scan the page and make lists of items to change,
 	 * then apply the changes within a critical section.  This keeps as much

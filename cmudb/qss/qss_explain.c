@@ -3,6 +3,7 @@
 #include "access/xact.h"
 #include "commands/prepare.h"
 #include "tcop/tcopprot.h"
+#include "utils/snapmgr.h"
 
 static void qss_ExplainOnePlan(PlannedStmt *plan,
 							   const char *queryString,
@@ -14,7 +15,7 @@ static void qss_ExplainOnePlan(PlannedStmt *plan,
 	QueryDesc *queryDesc;
 	int eflags = 0;
 
-	queryDesc = CreateQueryDesc(plan, queryString, generation, InvalidSnapshot, InvalidSnapshot, None_Receiver, params, queryEnv, 0);
+	queryDesc = CreateQueryDesc(plan, queryString, generation, GetActiveSnapshot(), InvalidSnapshot, None_Receiver, params, queryEnv, 0);
 
 	// If we don't do this, we can't get any useful information about the index keys
 	// that are actually used to perform the index lookup.
