@@ -943,7 +943,7 @@ ExecInsert(ModifyTableState *mtstate,
 
 			/* insert index entries for tuple */
 			if (resultRelInfo->ri_NumIndices > 0) {
-				if (qss_capture_exec_stats) {
+				if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) {
 					if (mtstate->ps.plan->plan_node_id != 0) {
 						elog(ERROR, "Unsupported non-root ModifyTable instrumentation of index insert");
 					}
@@ -958,7 +958,7 @@ ExecInsert(ModifyTableState *mtstate,
 									slot, estate, false,
 									false, NULL, NIL);
 
-				if (qss_capture_exec_stats && mtstate->ps.instrument) {
+				if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE && mtstate->ps.instrument) {
 					InstrStartNode(mtstate->ps.instrument);
 				}
 			}
@@ -992,14 +992,14 @@ ExecInsert(ModifyTableState *mtstate,
 	}
 
 	/* AFTER ROW INSERT Triggers */
-	if (qss_capture_exec_stats && mtstate->ps.instrument) {
+	if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE && mtstate->ps.instrument) {
 		InstrStopNode(mtstate->ps.instrument, 0.0);
 	}
 
 	ExecARInsertTriggers(estate, resultRelInfo, slot, recheckIndexes,
 						 ar_insert_trig_tcs);
 
-	if (qss_capture_exec_stats && mtstate->ps.instrument) {
+	if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE && mtstate->ps.instrument) {
 		InstrStartNode(mtstate->ps.instrument);
 	}
 
@@ -1397,14 +1397,14 @@ ldelete:;
 	}
 
 	/* AFTER ROW DELETE Triggers */
-	if (qss_capture_exec_stats && mtstate->ps.instrument) {
+	if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE && mtstate->ps.instrument) {
 		InstrStopNode(mtstate->ps.instrument, 0.0);
 	}
 
 	ExecARDeleteTriggers(estate, resultRelInfo, tupleid, oldtuple,
 						 ar_delete_trig_tcs);
 
-	if (qss_capture_exec_stats && mtstate->ps.instrument) {
+	if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE && mtstate->ps.instrument) {
 		InstrStartNode(mtstate->ps.instrument);
 	}
 
@@ -1984,7 +1984,7 @@ lreplace:;
 
 		/* insert index entries for tuple if necessary */
 		if (resultRelInfo->ri_NumIndices > 0 && update_indexes) {
-			if (qss_capture_exec_stats) {
+			if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) {
 				if (mtstate->ps.plan->plan_node_id != 0) {
 					elog(ERROR, "Unsupported non-root ModifyTable instrumentation of index insert");
 				}
@@ -2000,7 +2000,7 @@ lreplace:;
 												   slot, estate, true, false,
 												   NULL, NIL);
 
-			if (qss_capture_exec_stats && mtstate->ps.instrument) {
+			if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE && mtstate->ps.instrument) {
 				InstrStartNode(mtstate->ps.instrument);
 			}
 		}
@@ -2010,7 +2010,7 @@ lreplace:;
 		(estate->es_processed)++;
 
 	/* AFTER ROW UPDATE Triggers */
-	if (qss_capture_exec_stats && mtstate->ps.instrument) {
+	if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE && mtstate->ps.instrument) {
 		InstrStopNode(mtstate->ps.instrument, 0.0);
 	}
 
@@ -2020,7 +2020,7 @@ lreplace:;
 						 mtstate->mt_oc_transition_capture :
 						 mtstate->mt_transition_capture);
 
-	if (qss_capture_exec_stats && mtstate->ps.instrument) {
+	if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE && mtstate->ps.instrument) {
 		InstrStartNode(mtstate->ps.instrument);
 	}
 

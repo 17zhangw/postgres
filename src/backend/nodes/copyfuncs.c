@@ -1476,6 +1476,7 @@ _copyConst(const Const *from)
 	COPY_SCALAR_FIELD(consttypmod);
 	COPY_SCALAR_FIELD(constcollid);
 	COPY_SCALAR_FIELD(constlen);
+	COPY_SCALAR_FIELD(paramId);
 
 	if (from->constbyval || from->constisnull)
 	{

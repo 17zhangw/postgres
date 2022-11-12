@@ -2143,15 +2143,6 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
-	{
-		{"qss_capture_abort", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Sets whether to capture aborts with QSS."),
-		},
-		&qss_capture_abort,
-		false,
-		NULL, NULL, NULL
-	},
-
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL

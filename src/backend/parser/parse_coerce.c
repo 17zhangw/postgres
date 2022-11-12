@@ -289,6 +289,7 @@ coerce_type(ParseState *pstate, Node *node,
 		newcon->constlen = typeLen(baseType);
 		newcon->constbyval = typeByVal(baseType);
 		newcon->constisnull = con->constisnull;
+		newcon->paramId = con->paramId;
 
 		/*
 		 * We use the original literal's location regardless of the position

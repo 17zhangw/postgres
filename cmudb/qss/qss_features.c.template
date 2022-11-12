@@ -22,6 +22,7 @@
 #include "utils/rel.h"
 
 #include "cmudb/qss/qss.h"
+#include "qss.h"
 #include "qss_features.h"
 
 #define PLAN_NODE_ID(p) (p ? p->plan_node_id : PLAN_INVALID_ID)
@@ -133,34 +134,71 @@ SUBST_EXPLAIN_NODE_ENTRY
 
 SUBST_NODE_TO_NAME
 
-static void WalkPlan(struct Plan *plan, PlanState *ps, ExplainState *es, EState *estate) {
+static void WalkPlan(struct Plan *plan, PlanState *ps,
+                     ExplainState *es, EState *estate,
+                     const char* relationship,
+                     List *ancestors) {
     Assert(plan != NULL);
     ExplainEntry((struct Node*)plan, es, estate);
     if (nodeTag(es) == T_IndexScanState || nodeTag(es) == T_IndexOnlyScanState) {
         ExplainEntry((struct Node*)ps, es, estate);
     }
     AugmentPlan(plan, ps, es, estate);
+    ExplainNodeMetadata(ps, ancestors, relationship, NULL, es, !qss_in_explain);
+
+    if (ps->instrument && qss_in_explain)
+    {
+        InstrEndLoop(ps->instrument);
+        ExplainPropertyFloat("counter0", NULL, ps->instrument->counter0, 9, es);
+        ExplainPropertyFloat("counter1", NULL, ps->instrument->counter1, 9, es);
+        ExplainPropertyFloat("counter2", NULL, ps->instrument->counter2, 9, es);
+        ExplainPropertyFloat("counter3", NULL, ps->instrument->counter3, 9, es);
+        ExplainPropertyFloat("counter4", NULL, ps->instrument->counter4, 9, es);
+        ExplainPropertyFloat("counter5", NULL, ps->instrument->counter5, 9, es);
+        ExplainPropertyFloat("counter6", NULL, ps->instrument->counter6, 9, es);
+        ExplainPropertyFloat("counter7", NULL, ps->instrument->counter7, 9, es);
+        ExplainPropertyFloat("counter8", NULL, ps->instrument->counter8, 9, es);
+        ExplainPropertyFloat("counter9", NULL, ps->instrument->counter9, 9, es);
+        ExplainPropertyFloat("blk_hit", NULL, ps->instrument->bufusage.shared_blks_hit, 9, es);
+        ExplainPropertyFloat("blk_miss", NULL, ps->instrument->bufusage.shared_blks_read, 9, es);
+        ExplainPropertyFloat("blk_dirty", NULL, ps->instrument->bufusage.shared_blks_dirtied, 9, es);
+        ExplainPropertyFloat("blk_write", NULL, ps->instrument->bufusage.shared_blks_written, 9, es);
+    }
 
     if (outerPlan(plan) != NULL || innerPlan(plan) != NULL) {
         ExplainOpenGroup("Plans", "Plans", false, es);
+        ancestors = lcons(plan, ancestors);
     }
 
     if (outerPlan(plan) != NULL) {
         Assert(outerPlanState(ps) != NULL);
         ExplainOpenGroup("left-child", NULL, true, es);
-        WalkPlan(outerPlan(plan), outerPlanState(ps), es, estate);
+        WalkPlan(outerPlan(plan), outerPlanState(ps), es, estate, "Outer", ancestors);
         ExplainCloseGroup("left-child", NULL, true, es);
     }
 
     if (innerPlan(plan) != NULL) {
         Assert(innerPlanState(ps) != NULL);
         ExplainOpenGroup("right-child", NULL, true, es);
-        WalkPlan(innerPlan(plan), innerPlanState(ps), es, estate);
+        WalkPlan(innerPlan(plan), innerPlanState(ps), es, estate, "Inner", ancestors);
         ExplainCloseGroup("right-child", NULL, true, es);
 	}
 
     if (outerPlan(plan) != NULL || innerPlan(plan) != NULL) {
         ExplainCloseGroup("Plans", "Plans", false, es);
+    }
+
+    if (ps->initPlan ||
+		IsA(plan, Append) ||
+		IsA(plan, MergeAppend) ||
+		IsA(plan, BitmapAnd) ||
+		IsA(plan, BitmapOr) ||
+		IsA(plan, SubqueryScan) ||
+		(IsA(ps, CustomScanState) && ((CustomScanState *) ps)->custom_ps != NIL) ||
+		ps->subPlan) {
+        ExplainPropertyBool("incomplete", true, es);
+    } else {
+        ExplainPropertyBool("incomplete", false, es);
     }
 }
 
@@ -196,11 +234,22 @@ void OutputPlanToExplain(QueryDesc* queryDesc, ExplainState* state) {
         ExplainOpenGroup("left-child", NULL, true, es);
     }
 
-    WalkPlan(queryDesc->planstate->plan, queryDesc->planstate, state, queryDesc->estate);
+    WalkPlan(queryDesc->planstate->plan, queryDesc->planstate, state, queryDesc->estate, NULL, NIL);
 
     if (queryDesc->plannedstmt->commandType == CMD_SELECT) {
         ExplainCloseGroup("left-child", NULL, true, es);
         ExplainCloseGroup("Plans", "Plans", false, es);
+    }
+
+    if (queryDesc->totaltime && qss_in_explain)
+    {
+        InstrEndLoop(queryDesc->totaltime);
+        ExplainPropertyFloat("elapsed_us", NULL, queryDesc->totaltime->total * 1000000.0, 9, es);
+        ExplainPropertyFloat("startup_time", NULL, queryDesc->totaltime->startup * 1000000.0, 9, es);
+        ExplainPropertyFloat("blk_hit", NULL, queryDesc->totaltime->bufusage.shared_blks_hit, 9, es);
+        ExplainPropertyFloat("blk_miss", NULL, queryDesc->totaltime->bufusage.shared_blks_read, 9, es);
+        ExplainPropertyFloat("blk_dirty", NULL, queryDesc->totaltime->bufusage.shared_blks_dirtied, 9, es);
+        ExplainPropertyFloat("blk_write", NULL, queryDesc->totaltime->bufusage.shared_blks_written, 9, es);
     }
 
     ExplainCloseGroup("NoisePage", NULL, true, state);

@@ -431,7 +431,7 @@ RI_FKey_check(TriggerData *trigdata)
 	}
 
 	Assert(ActiveQSSInstrumentation == NULL);
-	if (qss_capture_exec_stats) {
+	if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) {
 		ActiveQSSInstrumentation = AllocQSSInstrumentation("InsertUpdateFKTriggerEnforce", true);
 		if (ActiveQSSInstrumentation) {
 			ActiveQSSInstrumentation->payload = (int64_t)trigdata->tg_trigger->tgoid;

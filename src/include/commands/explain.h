@@ -84,7 +84,10 @@ void ExplainOneQuery(Query *query,
 typedef const char *(*explain_get_index_name_hook_type) (Oid indexId);
 extern PGDLLIMPORT explain_get_index_name_hook_type explain_get_index_name_hook;
 
-
+extern bool ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used);
+extern void ExplainNodeMetadata(PlanState *planstate, List *ancestors,
+								const char* relationship, const char* plan_name,
+								ExplainState *es, bool preserve_param);
 extern void ExplainQuery(ParseState *pstate, ExplainStmt *stmt,
 						 ParamListInfo params, DestReceiver *dest);
 

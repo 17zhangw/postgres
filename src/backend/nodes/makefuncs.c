@@ -322,6 +322,40 @@ makeConst(Oid consttype,
 	cnst->constisnull = constisnull;
 	cnst->constbyval = constbyval;
 	cnst->location = -1;		/* "unknown" */
+	cnst->paramId = -1;
+
+	return cnst;
+}
+
+Const *
+makeConstParam(Oid consttype,
+			   int32 consttypmod,
+			   Oid constcollid,
+			   int constlen,
+			   Datum constvalue,
+			   bool constisnull,
+			   bool constbyval,
+			   int paramId)
+{
+	Const	   *cnst = makeNode(Const);
+
+	/*
+	 * If it's a varlena value, force it to be in non-expanded (non-toasted)
+	 * format; this avoids any possible dependency on external values and
+	 * improves consistency of representation, which is important for equal().
+	 */
+	if (!constisnull && constlen == -1)
+		constvalue = PointerGetDatum(PG_DETOAST_DATUM(constvalue));
+
+	cnst->consttype = consttype;
+	cnst->consttypmod = consttypmod;
+	cnst->constcollid = constcollid;
+	cnst->constlen = constlen;
+	cnst->constvalue = constvalue;
+	cnst->constisnull = constisnull;
+	cnst->constbyval = constbyval;
+	cnst->location = -1;		/* "unknown" */
+	cnst->paramId = paramId;
 
 	return cnst;
 }

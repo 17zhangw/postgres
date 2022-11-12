@@ -4235,7 +4235,7 @@ PostgresMain(int argc, char *argv[],
 		 */
 		debug_query_string = NULL;
 
-		/* We still need the memory context in the case that we want to output aborts */
+		/* We need to wipe any QSS state. */
 		QSSAbort();
 
 		/*

@@ -115,6 +115,7 @@ typedef struct
 	int			wrapColumn;		/* max line length, or -1 for no limit */
 	int			indentLevel;	/* current indent level for pretty-print */
 	bool		varprefix;		/* true to print prefixes on Vars */
+	bool        preserve_param;
 	ParseExprKind special_exprkind; /* set only for exprkinds needing special
 									 * handling */
 	Bitmapset  *appendparents;	/* if not null, map child Vars of these relids
@@ -328,6 +329,7 @@ bool		quote_all_identifiers = false;
  */
 static char *deparse_expression_pretty(Node *expr, List *dpcontext,
 									   bool forceprefix, bool showimplicit,
+									   bool preserve_param,
 									   int prettyFlags, int startIndent);
 static char *pg_get_viewdef_worker(Oid viewoid,
 								   int prettyFlags, int wrapColumn);
@@ -1372,7 +1374,7 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 			indexkey = (Node *) lfirst(indexpr_item);
 			indexpr_item = lnext(indexprs, indexpr_item);
 			/* Deparse */
-			str = deparse_expression_pretty(indexkey, context, false, false,
+			str = deparse_expression_pretty(indexkey, context, false, false, false,
 											prettyFlags, 0);
 			if (!colno || colno == keyno + 1)
 			{
@@ -1488,7 +1490,7 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 			pfree(predString);
 
 			/* Deparse */
-			str = deparse_expression_pretty(node, context, false, false,
+			str = deparse_expression_pretty(node, context, false, false, false,
 											prettyFlags, 0);
 			if (isConstraint)
 				appendStringInfo(&buf, " WHERE (%s)", str);
@@ -1716,7 +1718,7 @@ pg_get_statisticsobj_worker(Oid statextid, bool columns_only, bool missing_ok)
 		char	   *str;
 		int			prettyFlags = PRETTYFLAG_PAREN;
 
-		str = deparse_expression_pretty(expr, context, false, false,
+		str = deparse_expression_pretty(expr, context, false, false, false,
 										prettyFlags, 0);
 
 		if (colno > 0)
@@ -1795,7 +1797,7 @@ pg_get_statisticsobjdef_expressions(PG_FUNCTION_ARGS)
 		char	   *str;
 		int			prettyFlags = PRETTYFLAG_INDENT;
 
-		str = deparse_expression_pretty(expr, context, false, false,
+		str = deparse_expression_pretty(expr, context, false, false, false,
 										prettyFlags, 0);
 
 		astate = accumArrayResult(astate,
@@ -1972,7 +1974,7 @@ pg_get_partkeydef_worker(Oid relid, int prettyFlags,
 			partexpr_item = lnext(partexprs, partexpr_item);
 
 			/* Deparse */
-			str = deparse_expression_pretty(partkey, context, false, false,
+			str = deparse_expression_pretty(partkey, context, false, false, false,
 											prettyFlags, 0);
 			/* Need parens if it's not a bare function call */
 			if (looks_like_function(partkey))
@@ -2029,7 +2031,7 @@ pg_get_partition_constraintdef(PG_FUNCTION_ARGS)
 	 */
 	prettyFlags = PRETTYFLAG_INDENT;
 	context = deparse_context_for(get_relation_name(relationId), relationId);
-	consrc = deparse_expression_pretty((Node *) constr_expr, context, false,
+	consrc = deparse_expression_pretty((Node *) constr_expr, context, false, false,
 									   false, prettyFlags, 0);
 
 	PG_RETURN_TEXT_P(string_to_text(consrc));
@@ -2416,7 +2418,7 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 					context = NIL;
 				}
 
-				consrc = deparse_expression_pretty(expr, context, false, false,
+				consrc = deparse_expression_pretty(expr, context, false, false, false,
 												   prettyFlags, 0);
 
 				/*
@@ -2631,7 +2633,7 @@ pg_get_expr_worker(text *expr, Oid relid, const char *relname, int prettyFlags)
 		context = NIL;
 
 	/* Deparse */
-	str = deparse_expression_pretty(node, context, false, false,
+	str = deparse_expression_pretty(node, context, false, false, false,
 									prettyFlags, 0);
 
 	return string_to_text(str);
@@ -3502,7 +3504,15 @@ deparse_expression(Node *expr, List *dpcontext,
 				   bool forceprefix, bool showimplicit)
 {
 	return deparse_expression_pretty(expr, dpcontext, forceprefix,
-									 showimplicit, 0, 0);
+									 showimplicit, false, 0, 0);
+}
+
+char *
+deparse_expression_preserve_param(Node *expr, List *dpcontext,
+								  bool forceprefix, bool showimplicit)
+{
+	return deparse_expression_pretty(expr, dpcontext, forceprefix,
+									 showimplicit, true, 0, 0);
 }
 
 /* ----------
@@ -3527,6 +3537,7 @@ deparse_expression(Node *expr, List *dpcontext,
 static char *
 deparse_expression_pretty(Node *expr, List *dpcontext,
 						  bool forceprefix, bool showimplicit,
+						  bool preserve_param,
 						  int prettyFlags, int startIndent)
 {
 	StringInfoData buf;
@@ -3538,6 +3549,7 @@ deparse_expression_pretty(Node *expr, List *dpcontext,
 	context.windowClause = NIL;
 	context.windowTList = NIL;
 	context.varprefix = forceprefix;
+	context.preserve_param = preserve_param;
 	context.prettyFlags = prettyFlags;
 	context.wrapColumn = WRAP_COLUMN_DEFAULT;
 	context.indentLevel = startIndent;
@@ -7898,8 +7910,8 @@ get_parameter(Param *param, deparse_context *context)
 		 * parens to ensure the expression looks atomic.
 		 */
 		need_paren = !(IsA(expr, Var) ||
-					   IsA(expr, Aggref) ||
-					   IsA(expr, Param));
+				IsA(expr, Aggref) ||
+				IsA(expr, Param));
 		if (need_paren)
 			appendStringInfoChar(context->buf, '(');
 
@@ -10235,6 +10247,12 @@ get_const_expr(Const *constval, deparse_context *context, int showtype)
 	bool		typIsVarlena;
 	char	   *extval;
 	bool		needlabel = false;
+
+	if (context->preserve_param && constval->paramId != -1)
+	{
+		appendStringInfo(context->buf, "$%d", constval->paramId);
+		return;
+	}
 
 	if (constval->constisnull)
 	{

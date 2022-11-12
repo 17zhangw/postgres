@@ -12,10 +12,20 @@ static void qss_ExplainOnePlan(PlannedStmt *plan,
 							   ParamListInfo params,
 							   QueryEnvironment *queryEnv,
 							   ExplainState *es) {
+	StringInfo explain;
 	QueryDesc *queryDesc;
 	int eflags = 0;
+	int instrument_option = 0;
 
-	queryDesc = CreateQueryDesc(plan, queryString, generation, GetActiveSnapshot(), InvalidSnapshot, None_Receiver, params, queryEnv, 0);
+	if (es->analyze)
+		instrument_option |= INSTRUMENT_TIMER | INSTRUMENT_BUFFERS;
+
+	queryDesc = CreateQueryDesc(plan, queryString, generation, GetActiveSnapshot(), InvalidSnapshot, None_Receiver, params, queryEnv, instrument_option);
+	if (es->analyze && queryDesc->totaltime == NULL)
+	{
+		/** Capture the total time. */
+		queryDesc->totaltime = InstrAlloc(1, INSTRUMENT_TIMER | INSTRUMENT_BUFFERS, false, 0);
+	}
 
 	// If we don't do this, we can't get any useful information about the index keys
 	// that are actually used to perform the index lookup.
@@ -26,26 +36,49 @@ static void qss_ExplainOnePlan(PlannedStmt *plan,
 	eflags = 0;
 	if (into) eflags |= GetIntoRelEFlags(into);
 
-	// Run the executor.
-	ExecutorStart(queryDesc, eflags);
-	Assert(queryDesc->estate != NULL);
+	PG_TRY();
+	{
+		qss_in_explain = true;
 
-	// Finally, walks through the plan, dumping the output of the plan in a separate top-level group.
-	OutputPlanToExplain(queryDesc, es);
+		// Run the executor.
+		ExecutorStart(queryDesc, eflags);
+		Assert(queryDesc->estate != NULL);
 
-	// Free the created query description resources.
-	ExecutorFinish(queryDesc);
-	ExecutorEnd(queryDesc);
-	FreeQueryDesc(queryDesc);
+		if (es->analyze)
+		{
+			/** Run the query plan if we are asked to. */
+			ExecutorRun(queryDesc, ForwardScanDirection, 0L, true);
+		}
+
+		// Free the created query description resources.
+		ExecutorFinish(queryDesc);
+
+		// FIXME: This does not capture any instrumentation that are not plan node mapped.
+
+		// Finally, walks through the plan, dumping the output of the plan in a separate top-level group.
+		explain = ProcessQueryExplain(queryDesc, es->analyze, true);
+		resetStringInfo(es->str);
+		appendStringInfoString(es->str, explain->data);
+
+		ExecutorEnd(queryDesc);
+		FreeQueryDesc(queryDesc);
+	}
+	PG_FINALLY();
+	{
+		qss_in_explain = false;
+	}
+	PG_END_TRY();
 }
 
 void qss_ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es, const char *queryString, ParamListInfo params, QueryEnvironment *queryEnv) {
 	if (es->format == EXPLAIN_FORMAT_NOISEPAGE && IsA(utilityStmt, ExecuteStmt)) {
 		ExecuteStmt *execstmt = (ExecuteStmt*)utilityStmt;
+		ParamListInfo paramLI = NULL;
 		PreparedStatement *entry;
 		PlannedStmt *plan;
 		const char *query_string;
 		CachedPlan *cplan;
+		EState *estate = NULL;
 
 		/* Look it up in the hash table */
 		entry = FetchPreparedStatement(execstmt->name, true);
@@ -53,6 +86,25 @@ void qss_ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es
 		/* Shouldn't find a non-fixed-result cached plan */
 		if (!entry->plansource->fixed_result)
 			elog(ERROR, "EXPLAIN EXECUTE does not support variable-result cached plans");
+
+		/* Evaluate parameters, if any */
+		if (entry->plansource->num_params)
+		{
+			ParseState *pstate;
+
+			pstate = make_parsestate(NULL);
+			pstate->p_sourcetext = queryString;
+
+			/*
+			 * Need an EState to evaluate parameters; must not delete it till end
+			 * of query, in case parameters are pass-by-reference.  Note that the
+			 * passed-in "params" could possibly be referenced in the parameter
+			 * expressions.
+			 */
+			estate = CreateExecutorState();
+			estate->es_param_list_info = params;
+			paramLI = EvaluateParams(pstate, entry, execstmt->params, estate);
+		}
 
 		/* Get a generic plan. */
 		cplan = GetCachedPlan(entry->plansource, NULL, CurrentResourceOwner, queryEnv);
@@ -63,10 +115,13 @@ void qss_ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es
 
 		plan = lfirst_node(PlannedStmt, list_head(cplan->stmt_list));
 		if (plan->commandType == CMD_UTILITY) {
-			ExplainOneUtility(plan->utilityStmt, into, es, query_string, params, queryEnv);
+			ExplainOneUtility(plan->utilityStmt, into, es, query_string, paramLI, queryEnv);
 		} else {
-			qss_ExplainOnePlan(plan, query_string, cplan->generation, into, params, queryEnv, es);
+			qss_ExplainOnePlan(plan, query_string, cplan->generation, into, paramLI, queryEnv, es);
 		}
+
+		if (estate)
+			FreeExecutorState(estate);
 
 		ReleaseCachedPlan(cplan, CurrentResourceOwner);
 	} else {
@@ -80,7 +135,7 @@ void qss_ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es
 void qss_ExplainOneQuery(Query *query, int cursorOptions, IntoClause *into, ExplainState *es,
 						 const char *queryString, ParamListInfo params, QueryEnvironment *queryEnv) {
 	PlannedStmt *plan;
-	if (es->format == EXPLAIN_FORMAT_NOISEPAGE) {
+	if (es->format == EXPLAIN_FORMAT_NOISEPAGE && into == NULL) {
 		// If there is another advisor present, then let that advisor do whatever it needs to do.
 		// Note that we don't actually execute the "real" ExplainOnePlan.
 		if (qss_prev_ExplainOneQuery) {

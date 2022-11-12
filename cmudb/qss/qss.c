@@ -10,6 +10,8 @@ PG_MODULE_MAGIC;
 void		_PG_init(void);
 void		_PG_fini(void);
 
+HTAB *qss_PlansHTAB = NULL;
+
 ExplainOneQuery_hook_type qss_prev_ExplainOneQuery = NULL;
 ExplainOneUtility_hook_type qss_prev_ExplainOneUtility = NULL;
 ExecutorEnd_hook_type qss_prev_ExecutorEnd = NULL;
@@ -17,10 +19,11 @@ ExecutorStart_hook_type qss_prev_ExecutorStart = NULL;
 ProcessUtility_hook_type qss_prev_ProcessUtility = NULL;
 get_relation_info_hook_type qss_prev_get_relation_info = NULL;
 
+bool qss_in_explain = false;
 MemoryContext qss_MemoryContext = NULL;
 
 void _PG_init(void) {
-    elog(LOG, "QCache extension initialization.");
+	elog(LOG, "QSS extension initialization.");
 
 	qss_prev_ExecutorEnd = ExecutorEnd_hook;
 	qss_prev_ExecutorStart = ExecutorStart_hook;
@@ -44,7 +47,8 @@ void _PG_init(void) {
 					ALLOCSET_DEFAULT_INITSIZE,
 					ALLOCSET_DEFAULT_MAXSIZE);
 
-	RegisterXactCallback(qss_xact_callback, NULL);
+	/** Initialize plans and associated stats metadata. */
+	qss_InitPlansHashTable();
 }
 
 void _PG_fini(void) {
@@ -57,5 +61,5 @@ void _PG_fini(void) {
 	qss_AllocInstrumentation_hook = NULL;
 	qss_QSSAbort_hook = NULL;
 
-	UnregisterXactCallback(qss_xact_callback, NULL);
+	MemoryContextDelete(qss_MemoryContext);
 }

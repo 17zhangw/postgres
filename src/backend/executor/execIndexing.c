@@ -344,7 +344,7 @@ ExecInsertIndexTuples(ResultRelInfo *resultRelInfo,
 		if (!indexInfo->ii_ReadyForInserts)
 			continue;
 
-		if (qss_capture_exec_stats) {
+		if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) {
 			ActiveQSSInstrumentation = AllocQSSInstrumentation("ModifyTableIndexInsert", true);
 			if (ActiveQSSInstrumentation) {
 				ActiveQSSInstrumentation->payload = (int64_t)indexRelation->rd_id;

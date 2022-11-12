@@ -2293,13 +2293,14 @@ eval_const_expressions_mutator(Node *node,
 								pval = prm->value;
 							else
 								pval = datumCopy(prm->value, typByVal, typLen);
-							return (Node *) makeConst(param->paramtype,
-													  param->paramtypmod,
-													  param->paramcollid,
-													  (int) typLen,
-													  pval,
-													  prm->isnull,
-													  typByVal);
+							return (Node *) makeConstParam(param->paramtype,
+														   param->paramtypmod,
+														   param->paramcollid,
+														   (int) typLen,
+														   pval,
+														   prm->isnull,
+														   typByVal,
+														   param->paramid);
 						}
 					}
 				}

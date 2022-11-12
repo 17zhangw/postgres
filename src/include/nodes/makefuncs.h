@@ -56,6 +56,15 @@ extern Const *makeConst(Oid consttype,
 						bool constisnull,
 						bool constbyval);
 
+extern Const *makeConstParam(Oid consttype,
+							 int32 consttypmod,
+							 Oid constcollid,
+							 int constlen,
+							 Datum constvalue,
+							 bool constisnull,
+							 bool constbyval,
+							 int paramId);
+
 extern Const *makeNullConst(Oid consttype, int32 consttypmod, Oid constcollid);
 
 extern Node *makeBoolConst(bool value, bool isnull);

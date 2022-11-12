@@ -348,11 +348,12 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	/* Allow instrumentation of Executor overall runtime */
 	if (queryDesc->totaltime)
 	{
-		InstrStartNode(queryDesc->totaltime);
 		if (queryDesc->nesting_level == 1)
 		{
 			TS_MARKER(qss_ExecutorStart);
 		}
+
+		InstrStartNode(queryDesc->totaltime);
 	}
 
 	/*
@@ -401,11 +402,12 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 
 	if (queryDesc->totaltime)
 	{
+		InstrStopNode(queryDesc->totaltime, estate->es_processed);
+
+		// Block again.
 		if (queryDesc->nesting_level == 1) {
 			TS_MARKER(qss_Block);
 		}
-
-		InstrStopNode(queryDesc->totaltime, estate->es_processed);
 	}
 
 	MemoryContextSwitchTo(oldcontext);
@@ -457,11 +459,14 @@ standard_ExecutorFinish(QueryDesc *queryDesc)
 	/* Allow instrumentation of Executor overall runtime */
 	if (queryDesc->totaltime)
 	{
-		InstrStartNode(queryDesc->totaltime);
+		// This is done to have similar semantics to blocking. We allow a time gap
+		// for (un)blocking that is not measured by the total time.
 		if (queryDesc->nesting_level == 1)
 		{
 			TS_MARKER(qss_Unblock);
 		}
+
+		InstrStartNode(queryDesc->totaltime);
 	}
 
 	/* Run ModifyTable nodes to completion */
@@ -473,11 +478,14 @@ standard_ExecutorFinish(QueryDesc *queryDesc)
 
 	if (queryDesc->totaltime)
 	{
-		if (queryDesc->nesting_level == 1) {
-			TS_MARKER(qss_ExecutorEnd);
-		}
-
 		InstrStopNode(queryDesc->totaltime, 0);
+
+		if (queryDesc->nesting_level == 1) {
+			uint64_t time = 0;
+			InstrEndLoop(queryDesc->totaltime);
+			time = (uint64_t)(queryDesc->totaltime->total * 1000000.0);
+			TS_MARKER(qss_ExecutorEnd, (uint64_t)time);
+		}
 	}
 
 	MemoryContextSwitchTo(oldcontext);
