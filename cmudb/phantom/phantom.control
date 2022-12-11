@@ -1,0 +1,4 @@
+# phantom extension
+comment = 'Dedicated worker scraper for table state.'
+default_version = '0.0.1'
+relocatable = true

@@ -117,7 +117,7 @@ printtup_startup(DestReceiver *self, int operation, TupleDesc typeinfo, uint64_t
 {
 	DR_printtup *myState = (DR_printtup *) self;
 	Portal		portal = myState->portal;
-	if (qss_capture_enabled && qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE && queryId != UINT64CONST(0)) {
+	if (qss_capture_enabled && !qss_capture_plan_only && qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE && queryId != UINT64CONST(0)) {
 		myState->track = true;
 		myState->instr = AllocQSSInstrumentation("DestReceiverRemote", true);
 		if (myState->instr) {

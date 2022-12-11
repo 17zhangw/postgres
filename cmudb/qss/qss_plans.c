@@ -66,6 +66,7 @@ Instrumentation* qss_AllocInstrumentation(const char *ou, bool need_timer) {
 
 	if (!qss_capture_enabled ||
 		!qss_capture_exec_stats ||
+		qss_capture_plan_only ||
 		(qss_output_format != QSS_OUTPUT_FORMAT_NOISEPAGE) ||
 		!top->capture) {
 		// Not enabled.
@@ -104,7 +105,7 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 	query_desc->nesting_level = nesting_level;
 
 	/** Whether we should capture this query at all. */
-	need_total = qss_capture_enabled && (qss_capture_nested || nesting_level == 1);
+	need_total = qss_capture_enabled && (qss_capture_nested || nesting_level == 1) && !qss_capture_plan_only;
 	/** Whether we should be capturing at all or not. */
 	capture = qss_capture_exec_stats;
 	/** Whether we need instrumentation. */
@@ -266,7 +267,7 @@ static void ProcessQueryInternalTable(QueryDesc *query_desc, bool instrument) {
 		}
 	}
 
-	if (qss_capture_exec_stats && instrument)
+	if (qss_capture_exec_stats && !qss_capture_plan_only && instrument)
 	{
 		ListCell *lc;
 		foreach (lc, top->statement_instrs)
@@ -291,9 +292,13 @@ void qss_ExecutorEnd(QueryDesc *query_desc) {
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 	Assert(query_desc->nesting_level == nesting_level);
 
-	if (qss_capture_enabled && query_desc->totaltime != NULL && top != NULL && !qss_in_explain) {
-		/** End the loop on the main counter. */
-		InstrEndLoop(query_desc->totaltime);
+	if (qss_capture_enabled && top != NULL && !qss_in_explain) {
+		if (query_desc->totaltime)
+		{
+			/** End the loop on the main counter. */
+			InstrEndLoop(query_desc->totaltime);
+		}
+
 		ProcessQueryInternalTable(query_desc, top->capture);
 	}
 

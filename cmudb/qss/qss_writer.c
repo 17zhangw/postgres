@@ -59,6 +59,11 @@ static inline void appendCSVLiteral(StringInfo buf, const char *data)
 struct QSSStats* GetStatsEntry(void)
 {
 	struct QSSStats* stats = NULL;
+	if (qss_capture_plan_only)
+	{
+		return NULL;
+	}
+
 	if (qss_head_stats != NULL)
 	{
 		if (qss_head_stats->num_stats < QSSSTATS_PER_CHUNK)
@@ -174,7 +179,8 @@ void qss_InitPlansHashTable(void)
 
 void qss_OutputData(int code, Datum arg)
 {
-	FILE* qfile;
+	bool created = false;
+	FILE* qfile = NULL;
 	HASH_SEQ_STATUS hash_seq;
 	struct QSSPlan* entry;
 	struct QSSStatsChunk* statschunk = NULL;
@@ -196,18 +202,23 @@ void qss_OutputData(int code, Datum arg)
 	snprintf(query_path, 256, "%s/pg_qss_plans_%d.csv", PGSTAT_STAT_PERMANENT_DIRECTORY, MyProcPid);
 	snprintf(stats_path, 256, "%s/pg_qss_stats_%d.csv", PGSTAT_STAT_PERMANENT_DIRECTORY, MyProcPid);
 
-    /** Create the pg_qss_plans file. */
-	qfile = AllocateFile(query_path, PG_BINARY_W);
-	if (qfile == NULL)
-		goto error;
-
-    /** Write the header for pg_qss_plans. */
-	if ((wrote = fwrite(QSS_PLAN_CSV_HEADER, 1, sizeof(QSS_PLAN_CSV_HEADER) - 1, qfile)) != sizeof(QSS_PLAN_CSV_HEADER) - 1)
-		goto error;
-
 	hash_seq_init(&hash_seq, qss_PlansHTAB);
 	while ((entry = hash_seq_search(&hash_seq)) != NULL)
 	{
+		if (!created)
+		{
+			/** Create the pg_qss_plans file. */
+			qfile = AllocateFile(query_path, PG_BINARY_W);
+			if (qfile == NULL)
+				goto error;
+
+			/** Write the header for pg_qss_plans. */
+			if ((wrote = fwrite(QSS_PLAN_CSV_HEADER, 1, sizeof(QSS_PLAN_CSV_HEADER) - 1, qfile)) != sizeof(QSS_PLAN_CSV_HEADER) - 1)
+				goto error;
+
+			created = true;
+		}
+
         /** Serialize each plan entry as a CSV row. */
 		appendStringInfo(&buf, "%ld,", entry->key.queryId);
 		appendStringInfo(&buf, "%ld,", entry->key.generation);
@@ -220,24 +231,35 @@ void qss_OutputData(int code, Datum arg)
 			goto error;
 		resetStringInfo(&buf);
 	}
-	FreeFile(qfile);
 
-    /** Create the pg_qss_stats file. */
-	qfile = AllocateFile(stats_path, PG_BINARY_W);
-	if (qfile == NULL)
-		goto error;
+	if (qfile != NULL)
+	{
+		FreeFile(qfile);
+		qfile = NULL;
+	}
 
-    /** Write the header for pg_qss_stats. */
-	if (fwrite(QSS_STATS_CSV_HEADER, 1, sizeof(QSS_STATS_CSV_HEADER) - 1, qfile) != sizeof(QSS_STATS_CSV_HEADER) - 1)
-		goto error;
-
+	created = false;
 	statschunk = qss_front_stats;
 	while (statschunk != NULL)
 	{
 		for (int i = 0; i < statschunk->num_stats; i++)
 		{
-            /** Write each stats entry out. */
 			struct QSSStats* stat = &statschunk->stats[i];
+			if (!created)
+			{
+				/** Create the pg_qss_stats file. */
+				qfile = AllocateFile(stats_path, PG_BINARY_W);
+				if (qfile == NULL)
+					goto error;
+
+				/** Write the header for pg_qss_stats. */
+				if (fwrite(QSS_STATS_CSV_HEADER, 1, sizeof(QSS_STATS_CSV_HEADER) - 1, qfile) != sizeof(QSS_STATS_CSV_HEADER) - 1)
+					goto error;
+
+				created = true;
+			}
+
+            /** Write each stats entry out. */
 			appendStringInfo(&buf, "%ld,", stat->queryId);
 			appendStringInfo(&buf, "%ld,", stat->generation);
 			appendStringInfo(&buf, "%d,", MyDatabaseId);
@@ -274,7 +296,12 @@ void qss_OutputData(int code, Datum arg)
 		}
 		statschunk = statschunk->next;
 	}
-	FreeFile(qfile);
+
+	if (qfile != NULL)
+	{
+		FreeFile(qfile);
+		qfile = NULL;
+	}
 	return;
 
 error:

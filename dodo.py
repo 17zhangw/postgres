@@ -4,3 +4,4 @@
 from dodos.ci import *
 from dodos.noisepage import *
 from dodos.qss import *
+from dodos.phantom import *

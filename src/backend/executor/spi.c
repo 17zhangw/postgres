@@ -2021,7 +2021,7 @@ spi_dest_startup(DestReceiver *self, int operation, TupleDesc typeinfo, uint64_t
 	if (_SPI_current->tuptable != NULL)
 		elog(ERROR, "improper call to spi_dest_startup");
 
-	if (qss_capture_enabled && qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE && queryId != UINT64CONST(0))
+	if (qss_capture_enabled && !qss_capture_plan_only && qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE && queryId != UINT64CONST(0))
 	{
 		_SPI_current->instr = AllocQSSInstrumentation("DestReceiverSPI", true);
 		if (_SPI_current->instr)

@@ -1,6 +1,7 @@
 #include "cmudb/qss/qss.h"
 
 bool qss_capture_enabled = false;
+bool qss_capture_plan_only = false;
 bool qss_capture_exec_stats = false;
 bool qss_capture_nested = false;
 int qss_output_format = QSS_OUTPUT_FORMAT_NOISEPAGE;

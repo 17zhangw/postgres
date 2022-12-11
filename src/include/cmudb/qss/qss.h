@@ -6,6 +6,7 @@
 #include "nodes/execnodes.h"
 
 extern bool qss_capture_enabled;
+extern bool qss_capture_plan_only;
 extern bool qss_capture_nested;
 extern bool qss_capture_exec_stats;
 

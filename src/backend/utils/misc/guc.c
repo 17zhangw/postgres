@@ -2126,6 +2126,15 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
+		{"qss_capture_plan_only", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Sets whether to capture only plans with QSS."),
+		},
+		&qss_capture_plan_only,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"qss_capture_nested", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Sets whether to capture nested queries with QSS."),
 		},

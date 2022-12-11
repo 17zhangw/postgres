@@ -1,0 +1,4 @@
+# pg_prewarm extension
+comment = 'warm relation data'
+default_version = '1.2'
+relocatable = true
