@@ -63,6 +63,9 @@ def task_np_build():
     return {
         "actions": [
             "make -j -s install-world-bin",
+            "cd cmudb/pg_hint_plan",
+            "PATH='../../build/bin/:$PATH' make install",
+            "cd ../../",
         ],
         "file_dep": [ARTIFACT_config_log],
         "targets": [ARTIFACT_postgres],

@@ -1,0 +1,3 @@
+[submodule "cmudb/pg_hint_plan"]
+	path = cmudb/pg_hint_plan
+	url = https://github.com/ossc-db/pg_hint_plan
