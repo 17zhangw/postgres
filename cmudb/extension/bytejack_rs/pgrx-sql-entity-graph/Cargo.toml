@@ -1,0 +1,39 @@
+#LICENSE Portions Copyright 2019-2021 ZomboDB, LLC.
+#LICENSE
+#LICENSE Portions Copyright 2021-2023 Technology Concepts & Design, Inc.
+#LICENSE
+#LICENSE Portions Copyright 2023-2023 PgCentral Foundation, Inc. <contact@pgcentral.org>
+#LICENSE
+#LICENSE All rights reserved.
+#LICENSE
+#LICENSE Use of this source code is governed by the MIT license that can be found in the LICENSE file.
+ 
+[package]
+name = "pgrx-sql-entity-graph"
+version = "0.11.0"
+authors = ["PgCentral Foundation, Inc. <contact@pgcentral.org>"]
+license = "MIT"
+description = "Sql Entity Graph for `pgrx`"
+homepage = "https://github.com/pgcentralfoundation/pgrx/"
+repository = "https://github.com/pgcentralfoundation/pgrx/"
+documentation = "https://docs.rs/pgrx-sql-entity-graph"
+readme = "README.md"
+edition = "2021"
+
+[features]
+syntax-highlighting = ["dep:syntect", "dep:owo-colors", "dep:atty"]
+no-schema-generation = []
+
+[dependencies]
+convert_case = "0.6.0"
+eyre = "0.6.8"
+petgraph = "0.6.4"
+proc-macro2 = { version = "1.0.69", features = [ "span-locations" ] }
+quote = "1.0.33"
+syn = { version = "1.0.109", features = [ "extra-traits", "full", "fold", "parsing" ] }
+unescape = "0.1.0"
+
+# colorized sql output
+atty = { version = "0.2.14", optional = true }
+owo-colors = { version = "3.5.0", optional = true }
+syntect = { version = "5.1.0", default-features = false, features = ["default-fancy"], optional = true }
