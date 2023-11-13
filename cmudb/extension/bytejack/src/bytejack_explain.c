@@ -58,6 +58,7 @@ static void bytejack_ExplainOneQuery(
         if (cacheResult)
         {
             appendStringInfoString(es->str, (const char *)cache_result_bytes(cacheResult));
+			cache_result_free(cacheResult);
             return;
         }
     }
