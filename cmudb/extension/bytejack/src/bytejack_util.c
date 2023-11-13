@@ -36,65 +36,67 @@ char *generate_normalized_query(JumbleState *jstate, const char *query, int quer
       last_off = 0,         /* Offset from start for previous tok */
       last_tok_len = 0;     /* Length (in bytes) of that tok */
 
-  /*
-   * Get constants' lengths (core system only gives us locations).  Note
-   * this also ensures the items are sorted by location.
-   */
-  fill_in_constant_lengths(jstate, query, query_loc);
+  ///*
+  // * Get constants' lengths (core system only gives us locations).  Note
+  // * this also ensures the items are sorted by location.
+  // */
+  //fill_in_constant_lengths(jstate, query, query_loc);
 
-  /*
-   * Allow for $n symbols to be longer than the constants they replace.
-   * Constants must take at least one byte in text form, while a $n symbol
-   * certainly isn't more than 11 bytes, even if n reaches INT_MAX.  We
-   * could refine that limit based on the max value of n for the current
-   * query, but it hardly seems worth any extra effort to do so.
-   */
-  norm_query_buflen = query_len + jstate->clocations_count * 10;
+  ///*
+  // * Allow for $n symbols to be longer than the constants they replace.
+  // * Constants must take at least one byte in text form, while a $n symbol
+  // * certainly isn't more than 11 bytes, even if n reaches INT_MAX.  We
+  // * could refine that limit based on the max value of n for the current
+  // * query, but it hardly seems worth any extra effort to do so.
+  // */
+  //norm_query_buflen = query_len + jstate->clocations_count * 10;
 
-  /* Allocate result buffer */
-  norm_query = palloc(norm_query_buflen + 1);
+  ///* Allocate result buffer */
+  //norm_query = palloc(norm_query_buflen + 1);
 
-  for (i = 0; i < jstate->clocations_count; i++) {
-    int off,     /* Offset from start for cur tok */
-        tok_len; /* Length (in bytes) of that tok */
+  //for (i = 0; i < jstate->clocations_count; i++) {
+  //  int off,     /* Offset from start for cur tok */
+  //      tok_len; /* Length (in bytes) of that tok */
 
-    off = jstate->clocations[i].location;
-    /* Adjust recorded location if we're dealing with partial string */
-    off -= query_loc;
+  //  off = jstate->clocations[i].location;
+  //  /* Adjust recorded location if we're dealing with partial string */
+  //  off -= query_loc;
 
-    tok_len = jstate->clocations[i].length;
-    if (tok_len < 0) continue; /* ignore any duplicates */
+  //  tok_len = jstate->clocations[i].length;
+  //  if (tok_len < 0) continue; /* ignore any duplicates */
 
-    /* Copy next chunk (what precedes the next constant) */
-    len_to_wrt = off - last_off;
-    len_to_wrt -= last_tok_len;
+  //  /* Copy next chunk (what precedes the next constant) */
+  //  len_to_wrt = off - last_off;
+  //  len_to_wrt -= last_tok_len;
 
-    Assert(len_to_wrt >= 0);
-    memcpy(norm_query + n_quer_loc, query + quer_loc, len_to_wrt);
-    n_quer_loc += len_to_wrt;
+  //  Assert(len_to_wrt >= 0);
+  //  memcpy(norm_query + n_quer_loc, query + quer_loc, len_to_wrt);
+  //  n_quer_loc += len_to_wrt;
 
-    /* And insert a param symbol in place of the constant token */
-    n_quer_loc += sprintf(norm_query + n_quer_loc, "$%d", i + 1 + jstate->highest_extern_param_id);
+  //  /* And insert a param symbol in place of the constant token */
+  //  n_quer_loc += sprintf(norm_query + n_quer_loc, "$%d", i + 1 + jstate->highest_extern_param_id);
 
-    quer_loc = off + tok_len;
-    last_off = off;
-    last_tok_len = tok_len;
-  }
+  //  quer_loc = off + tok_len;
+  //  last_off = off;
+  //  last_tok_len = tok_len;
+  //}
 
-  /*
-   * We've copied up until the last ignorable constant.  Copy over the
-   * remaining bytes of the original query string.
-   */
-  len_to_wrt = query_len - quer_loc;
+  ///*
+  // * We've copied up until the last ignorable constant.  Copy over the
+  // * remaining bytes of the original query string.
+  // */
+  //len_to_wrt = query_len - quer_loc;
 
-  Assert(len_to_wrt >= 0);
-  memcpy(norm_query + n_quer_loc, query + quer_loc, len_to_wrt);
-  n_quer_loc += len_to_wrt;
+  //Assert(len_to_wrt >= 0);
+  //memcpy(norm_query + n_quer_loc, query + quer_loc, len_to_wrt);
+  //n_quer_loc += len_to_wrt;
 
-  Assert(n_quer_loc <= norm_query_buflen);
-  norm_query[n_quer_loc] = '\0';
+  //Assert(n_quer_loc <= norm_query_buflen);
+  //norm_query[n_quer_loc] = '\0';
 
-  *query_len_p = n_quer_loc;
+  //*query_len_p = n_quer_loc;
+  norm_query = query;
+  n_quer_loc = query_len;
 
   char *start = strstr(norm_query, "/*+");
   if (start != NULL) {

@@ -56,12 +56,14 @@ pub unsafe fn get_index(indexid: pgrx_pg_sys::Oid) -> String {
 }
 
 pub unsafe fn compute_settings_signature() -> String {
-    format!("{} {} {} {} {}",
+    format!("{} {} {} {} {} {} {}",
             pgrx_pg_sys::NBuffers,
             pgrx_pg_sys::num_temp_buffers,
             pgrx_pg_sys::work_mem,
             pgrx_pg_sys::hash_mem_multiplier,
-            pgrx_pg_sys::effective_io_concurrency)
+            pgrx_pg_sys::effective_io_concurrency,
+            pgrx_pg_sys::max_parallel_workers,
+            pgrx_pg_sys::max_worker_processes)
 }
 
 pub unsafe fn compute_node_signature(node: *mut Node, output: &mut String) {
@@ -76,6 +78,10 @@ pub unsafe fn compute_node_signature(node: *mut Node, output: &mut String) {
 pub unsafe fn compute_plan_signature(pi: *mut List, node: *mut Plan, output: &mut String) {
     if node.is_null() {
         return
+    }
+
+    if (*node).parallel_aware {
+        output.push_str("Parallel ");
     }
 
     match (*node).type_ {
