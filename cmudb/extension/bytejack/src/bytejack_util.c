@@ -98,6 +98,12 @@ char *generate_normalized_query(JumbleState *jstate, const char *query, int quer
   norm_query = query;
   n_quer_loc = query_len;
 
+  if (strstr(norm_query, "EXPLAIN (") != NULL) {
+	  char *end = strstr(norm_query, ")") + 1;
+	  n_quer_loc -= (end - norm_query);
+	  norm_query = end;
+  }
+
   char *start = strstr(norm_query, "/*+");
   if (start != NULL) {
 	  char *tmp_query = palloc0(n_quer_loc + 1);

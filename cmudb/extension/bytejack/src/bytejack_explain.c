@@ -51,9 +51,7 @@ static void bytejack_ExplainOneQuery(
     if (bytejack_enable)
     {
         CacheResult *cacheResult = NULL;
-        if (bytejack_intercept_explain_analyze && es->analyze) {
-            cacheResult = cache_get_explain(redis_con, plan->rtable, plan->planTree, queryStringNormalized);
-        }
+        cacheResult = cache_get_explain(redis_con, plan->rtable, plan->planTree, queryStringNormalized);
 
         if (cacheResult)
         {
