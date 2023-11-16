@@ -310,7 +310,6 @@ pub extern "C" fn cache_append_explain(redis_con: *mut RedisCon, pi: *mut List, 
 
     if !ok {
         let explain = unsafe { CStr::from_ptr(explain_text) }.to_str().unwrap();
-        println!("Void caching: {explain}");
         let mut v: serde_json::Value = serde_json::from_str(&explain).unwrap();
         if let serde_json::Value::Object(ref mut map) = v {
             map.insert("Timeout".into(), serde_json::Value::Bool(true));

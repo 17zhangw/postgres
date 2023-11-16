@@ -95,7 +95,6 @@ static void bytejack_ExplainOneQuery(
 		es->grouping_stack = lcons_int(0, es->grouping_stack);
 
                 ExplainOnePlan(plan, into, es, queryString, params, queryEnv, &planduration, (es->buffers ? &bufusage : NULL));
-		elog(LOG, "%s", &es->str->data[current_len]);
                 cache_append_explain(redis_con, plan->rtable, plan->planTree, queryStringNormalized, &es->str->data[current_len], false);
             }
         }
