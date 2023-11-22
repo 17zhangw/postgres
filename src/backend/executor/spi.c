@@ -2670,6 +2670,23 @@ _SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 										options->params,
 										_SPI_current->queryEnv,
 										0);
+
+				if (plansource->query_string) {
+					char *paramStr = "";
+					ParamListInfo params = options->params;
+					if (params && params->numParams > 0 && log_parameter_max_length != 0)
+					{
+						char *str = NULL;
+						str = BuildParamLogString(params, NULL, -1);
+						if (str && str[0] != '\0')
+						{
+							paramStr = str;
+						}
+					}
+
+					ereport(LOG, (errmsg("query: %s; params: %s", plansource->query_string, paramStr), errhidestmt(true)));
+				}
+
 				res = _SPI_pquery(qdesc, fire_triggers,
 								  canSetTag ? options->tcount : 0);
 				FreeQueryDesc(qdesc);
