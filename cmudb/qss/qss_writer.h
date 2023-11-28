@@ -31,6 +31,7 @@ struct QSSStats {
 	int64_t generation;
 	int64_t timestamp;
 	int32_t plan_node_id;
+	uint32_t command_counter;
 	float elapsed_us;
 	float startup_time;
 	float nloops;
@@ -58,7 +59,7 @@ struct QSSStats {
 /**
  * Struct that defines a chunk of stats.
  */
-#define QSSSTATS_PER_CHUNK (32)
+#define QSSSTATS_PER_CHUNK (30)
 struct QSSStatsChunk {
 	struct QSSStats stats[QSSSTATS_PER_CHUNK];
 	struct QSSStatsChunk* next;
@@ -66,14 +67,14 @@ struct QSSStatsChunk {
 };
 
 /** Assert that this fits in a page size allocation. */
-static_assert(sizeof(struct QSSStats) == 120, "QSSStats is too large");
+static_assert(sizeof(struct QSSStats) == 128, "QSSStats is too large");
 /** Assert that this fits in a page size allocation. */
-static_assert(sizeof(struct QSSStatsChunk) < 4096, "QSSStatsChunk is too large");
+static_assert(sizeof(struct QSSStatsChunk) <= 4096, "QSSStatsChunk is too large");
 
 /** Gets the next QSSStats entry that we can populate. */
 struct QSSStats* GetStatsEntry(void);
-void WriteInstrumentation(Plan *plan, Instrumentation *instr, uint64_t queryId, int64_t generation, int64_t timestamp);
+void WriteInstrumentation(Plan *plan, Instrumentation *instr, uint64_t queryId, int64_t generation, int64_t timestamp, uint32_t command_counter);
 /** Writes a plan's instrumentation to be buffered. */
-void WritePlanInstrumentation(Plan *plan, PlanState *ps, uint64_t queryId, int64_t generation, int64_t timestamp);
+void WritePlanInstrumentation(Plan *plan, PlanState *ps, uint64_t queryId, int64_t generation, int64_t timestamp, uint32_t command_counter);
 /** Output the accumulated plan data. */
 void qss_OutputData(int code, Datum arg);

@@ -167,7 +167,7 @@ class ClangParser:
                     child.type.spelling
                     if child.type.get_canonical().kind != clang.cindex.TypeKind.RECORD
                     else child.type.get_canonical().get_declaration().spelling,
-                    child.type.get_canonical().kind,
+                    child.type.get_canonical().kind if child.type.spelling != 'bool' else clang.cindex.TypeKind.BOOL,
                 )
                 for child in node.get_children()
                 if child.kind == clang.cindex.CursorKind.FIELD_DECL

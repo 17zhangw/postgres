@@ -4,6 +4,7 @@
 #include "qss_features.h"
 #include "qss_writer.h"
 
+#include "access/parallel.h"
 #include "access/nbtree.h"
 #include "access/heapam.h"
 #include "access/relation.h"
@@ -31,6 +32,7 @@ static bool registered_shmem_exit = false;
 struct ExecutorInstrument {
 	int64 queryId; /** Query identifier */
 	int generation; /** Generation */
+	uint32_t command_counter;
 	char* params; /** Parameters */
 	int64_t params_len; /* Length of the params string. */
 	TimestampTz statement_ts; /** Statement Timestamp. */
@@ -100,6 +102,17 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 	bool need_instrument;
 	bool need_total;
 	bool capture;
+	if (IsInParallelMode() || IsParallelWorker()) {
+		/** Initialize the Executor. */
+		if (qss_prev_ExecutorStart != NULL) {
+			qss_prev_ExecutorStart(query_desc, eflags);
+		} else {
+			standard_ExecutorStart(query_desc, eflags);
+		}
+
+		return;
+	}
+
 	nesting_level++;
 	query_desc->nesting_level = nesting_level;
 
@@ -132,6 +145,7 @@ void qss_ExecutorStart(QueryDesc *query_desc, int eflags) {
 	exec->statement_ts = GetCurrentStatementStartTimestamp();
 	exec->queryId = query_desc->plannedstmt->queryId;
 	exec->generation = query_desc->generation;
+	exec->command_counter = GetCurrentCommandId(true);
 	exec->capture = need_instrument;
 	exec->estate = query_desc->estate;
 	if (query_desc->params != NULL) {
@@ -201,6 +215,7 @@ static void ProcessQueryInternalTable(QueryDesc *query_desc, bool instrument) {
 	uint64_t queryId = top->queryId;
 	int64_t generation = top->generation;
 	int64_t timestamp = top->statement_ts;
+	uint32_t command_counter = top->command_counter;
 	if (qss_PlansHTAB != NULL)
 	{
 		/** Check if we've already inserted the query plan. */
@@ -245,6 +260,7 @@ static void ProcessQueryInternalTable(QueryDesc *query_desc, bool instrument) {
 			stats->generation = generation;
 			stats->timestamp = timestamp;
 			stats->plan_node_id = -1;
+			stats->command_counter = command_counter;
 			stats->elapsed_us = query_desc->totaltime->total * 1000000.0;
 			stats->startup_time = query_desc->totaltime->startup * 1000000.0;
 			stats->nloops = query_desc->totaltime->nloops;
@@ -274,18 +290,26 @@ static void ProcessQueryInternalTable(QueryDesc *query_desc, bool instrument) {
 			/** Write instrumentation allocated during query execution. */
 			Instrumentation *instr = (Instrumentation*)lfirst(lc);
 			if (instr != NULL) {
-				WriteInstrumentation(NULL, instr, queryId, generation, timestamp);
+				WriteInstrumentation(NULL, instr, queryId, generation, timestamp, command_counter);
 			}
 		}
 
 		/** Write out the instrumentation from the plan nodes. */
-		WritePlanInstrumentation(query_desc->planstate->plan, query_desc->planstate, queryId, generation, timestamp);
+		WritePlanInstrumentation(query_desc->planstate->plan, query_desc->planstate, queryId, generation, timestamp, command_counter);
 	}
 }
 
 void qss_ExecutorEnd(QueryDesc *query_desc) {
 	MemoryContext oldcontext;
 	EState *estate = query_desc->estate;
+	if (IsInParallelMode() || IsParallelWorker()) {
+		/** Call the regular ExecutorEnd. */
+		if (qss_prev_ExecutorEnd != NULL) {
+			qss_prev_ExecutorEnd(query_desc);
+		} else {
+			standard_ExecutorEnd(query_desc);
+		}
+	}
 
 	/* Switch into per-query memory context */
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);

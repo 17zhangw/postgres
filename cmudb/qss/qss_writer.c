@@ -27,7 +27,7 @@ char QSS_PLAN_CSV_HEADER[] = "query_id,generation,db_id,pid,statement_timestamp,
 /**
  * Header for the pg_qss_stats_{pid}.csv file.
  */
-char QSS_STATS_CSV_HEADER[] = "query_id,generation,db_id,pid,statement_timestamp,plan_node_id,"
+char QSS_STATS_CSV_HEADER[] = "query_id,generation,db_id,pid,statement_timestamp,plan_node_id,command_counter,"
 "elapsed_us,startup_time,nloops,counter0,counter1,counter2,counter3,counter4,counter5,counter6,counter7,counter8,"
 "counter9,blk_hit,blk_miss,blk_dirty,blk_write,payload,txn,comment\n";
 
@@ -88,7 +88,7 @@ struct QSSStats* GetStatsEntry(void)
 /**
  * Write an instrumentation record into QSSStats in-memory.
  */
-void WriteInstrumentation(Plan *plan, Instrumentation *instr, uint64_t queryId, int64_t generation, int64_t timestamp) {
+void WriteInstrumentation(Plan *plan, Instrumentation *instr, uint64_t queryId, int64_t generation, int64_t timestamp, uint32_t command_counter) {
 	const char* nodeName = NULL;
 	struct QSSStats* stats = GetStatsEntry();
 
@@ -99,6 +99,7 @@ void WriteInstrumentation(Plan *plan, Instrumentation *instr, uint64_t queryId, 
 		stats->generation = generation;
 		stats->timestamp = timestamp;
 		stats->plan_node_id = plan ? plan->plan_node_id : instr->plan_node_id;
+		stats->command_counter = command_counter;
 		stats->elapsed_us = instr->total * 1000000.0;
 		stats->startup_time = instr->startup * 1000000.0;
 		stats->nloops = instr->nloops;
@@ -140,18 +141,18 @@ void WriteInstrumentation(Plan *plan, Instrumentation *instr, uint64_t queryId, 
 	}
 }
 
-void WritePlanInstrumentation(Plan *plan, PlanState *ps, uint64_t queryId, int64_t generation, int64_t timestamp) {
+void WritePlanInstrumentation(Plan *plan, PlanState *ps, uint64_t queryId, int64_t generation, int64_t timestamp, uint32_t command_counter) {
 	Instrumentation *instr = ps->instrument;
 	if (instr != NULL) {
-		WriteInstrumentation(plan, instr, queryId, generation, timestamp);
+		WriteInstrumentation(plan, instr, queryId, generation, timestamp, command_counter);
 	}
 
 	if (outerPlanState(ps) != NULL) {
-		WritePlanInstrumentation(outerPlan(plan), outerPlanState(ps), queryId, generation, timestamp);
+		WritePlanInstrumentation(outerPlan(plan), outerPlanState(ps), queryId, generation, timestamp, command_counter);
 	}
 
 	if (innerPlanState(ps) != NULL) {
-		WritePlanInstrumentation(innerPlan(plan), innerPlanState(ps), queryId, generation, timestamp);
+		WritePlanInstrumentation(innerPlan(plan), innerPlanState(ps), queryId, generation, timestamp, command_counter);
 	}
 }
 
@@ -244,6 +245,7 @@ void qss_OutputData(int code, Datum arg)
 			appendStringInfo(&buf, "%d,", MyProcPid);
 			appendStringInfo(&buf, "%ld,", stat->timestamp);
 			appendStringInfo(&buf, "%d,", stat->plan_node_id);
+			appendStringInfo(&buf, "%d,", stat->command_counter);
 			appendStringInfo(&buf, "%g,", stat->elapsed_us);
 			appendStringInfo(&buf, "%g,", stat->startup_time);
 			appendStringInfo(&buf, "%g,", stat->nloops);
