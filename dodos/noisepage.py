@@ -1,4 +1,6 @@
+import os
 from pathlib import Path
+from doit.action import CmdAction
 
 from dodos import VERBOSITY_DEFAULT
 
@@ -63,9 +65,6 @@ def task_np_build():
     return {
         "actions": [
             "make -j -s install-world-bin",
-            "cd cmudb/pg_hint_plan",
-            "PATH='../../build/bin/:$PATH' make install",
-            "cd ../../",
         ],
         "file_dep": [ARTIFACT_config_log],
         "targets": [ARTIFACT_postgres],
@@ -74,27 +73,38 @@ def task_np_build():
     }
 
 
-def task_np_test_core():
+def task_np_install():
     """
-    NoisePage: Run the core PostgreSQL tests.
+    NoisePage: Build the NoisePage binary.
     """
     return {
         "actions": [
-            "make -j check",
+            "make install",
+            "cp -r build/bin/* %(output)s",
         ],
-        "file_dep": [ARTIFACT_postgres],
+        "file_dep": [ARTIFACT_config_log],
         "verbosity": VERBOSITY_DEFAULT,
         "uptodate": [False],
+        "params": [
+            {
+                "name": "output",
+                "long": "output",
+                "help": 'Output',
+                "default": "debug",
+            },
+        ],
     }
 
 
-def task_np_test_all():
-    """
-    NoisePage: Run all the PostgreSQL tests.
-    """
+def task_np_build_extensions():
+    path = os.environ["PATH"]
+    npath = f"../../build/bin:{path}"
     return {
         "actions": [
-            "make -j check-world",
+            CmdAction("(cd cmudb/pg_hint_plan && make clean && make install)", env={"PATH": npath}),
+            CmdAction("(cd cmudb/HypoPG && make clean && make install)", env={"PATH": npath}),
+            CmdAction("(cd cmudb/hypocost && make clean && make install)", env={"PATH": npath}),
+            CmdAction("(cd cmudb/pgvector && make clean && make install)", env={"PATH": npath}),
         ],
         "file_dep": [ARTIFACT_postgres],
         "verbosity": VERBOSITY_DEFAULT,

@@ -240,6 +240,7 @@ struct PlannerInfo
 	int			join_cur_level; /* index of list being extended */
 
 	List	   *init_plans;		/* init SubPlans for query */
+	List	   *noninit_plans;	/* non-init subplans for query */
 
 	List	   *cte_plan_ids;	/* per-CTE-item list of subplan IDs (or -1 if
 								 * no subplan was made for that CTE) */
@@ -1251,6 +1252,9 @@ typedef struct IndexPath
 	ScanDirection indexscandir;
 	Cost		indextotalcost;
 	Selectivity indexselectivity;
+
+	double		loop_count;
+	bool		partial_path;
 } IndexPath;
 
 /*
@@ -1318,6 +1322,7 @@ typedef struct BitmapHeapPath
 {
 	Path		path;
 	Path	   *bitmapqual;		/* IndexPath, BitmapAndPath, BitmapOrPath */
+	double		loop_count;
 } BitmapHeapPath;
 
 /*
@@ -1526,34 +1531,6 @@ typedef struct MemoizePath
 } MemoizePath;
 
 /*
- * UniquePath represents elimination of distinct rows from the output of
- * its subpath.
- *
- * This can represent significantly different plans: either hash-based or
- * sort-based implementation, or a no-op if the input path can be proven
- * distinct already.  The decision is sufficiently localized that it's not
- * worth having separate Path node types.  (Note: in the no-op case, we could
- * eliminate the UniquePath node entirely and just return the subpath; but
- * it's convenient to have a UniquePath in the path tree to signal upper-level
- * routines that the input is known distinct.)
- */
-typedef enum UniquePathMethod
-{
-	UNIQUE_PATH_NOOP,			/* input is known unique already */
-	UNIQUE_PATH_HASH,			/* use hashing */
-	UNIQUE_PATH_SORT			/* use sorting */
-} UniquePathMethod;
-
-typedef struct UniquePath
-{
-	Path		path;
-	Path	   *subpath;
-	UniquePathMethod umethod;
-	List	   *in_operators;	/* equality operators of the IN clause */
-	List	   *uniq_exprs;		/* expressions to be made unique */
-} UniquePath;
-
-/*
  * GatherPath runs several copies of a plan in parallel and collects the
  * results.  The parallel leader may also execute the plan, unless the
  * single_copy flag is set.
@@ -1564,6 +1541,9 @@ typedef struct GatherPath
 	Path	   *subpath;		/* path for each worker */
 	bool		single_copy;	/* don't execute path more than once */
 	int			num_workers;	/* number of workers sought to help */
+
+	double		override_rows;
+	bool		override_rows_valid;
 } GatherPath;
 
 /*
@@ -1575,104 +1555,10 @@ typedef struct GatherMergePath
 	Path		path;
 	Path	   *subpath;		/* path for each worker */
 	int			num_workers;	/* number of workers sought to help */
+
+	double		override_rows;
+	bool		override_rows_valid;
 } GatherMergePath;
-
-
-/*
- * All join-type paths share these fields.
- */
-
-typedef struct JoinPath
-{
-	Path		path;
-
-	JoinType	jointype;
-
-	bool		inner_unique;	/* each outer tuple provably matches no more
-								 * than one inner tuple */
-
-	Path	   *outerjoinpath;	/* path for the outer side of the join */
-	Path	   *innerjoinpath;	/* path for the inner side of the join */
-
-	List	   *joinrestrictinfo;	/* RestrictInfos to apply to join */
-
-	/*
-	 * See the notes for RelOptInfo and ParamPathInfo to understand why
-	 * joinrestrictinfo is needed in JoinPath, and can't be merged into the
-	 * parent RelOptInfo.
-	 */
-} JoinPath;
-
-/*
- * A nested-loop path needs no special fields.
- */
-
-typedef struct NestPath
-{
-	JoinPath	jpath;
-} NestPath;
-
-/*
- * A mergejoin path has these fields.
- *
- * Unlike other path types, a MergePath node doesn't represent just a single
- * run-time plan node: it can represent up to four.  Aside from the MergeJoin
- * node itself, there can be a Sort node for the outer input, a Sort node
- * for the inner input, and/or a Material node for the inner input.  We could
- * represent these nodes by separate path nodes, but considering how many
- * different merge paths are investigated during a complex join problem,
- * it seems better to avoid unnecessary palloc overhead.
- *
- * path_mergeclauses lists the clauses (in the form of RestrictInfos)
- * that will be used in the merge.
- *
- * Note that the mergeclauses are a subset of the parent relation's
- * restriction-clause list.  Any join clauses that are not mergejoinable
- * appear only in the parent's restrict list, and must be checked by a
- * qpqual at execution time.
- *
- * outersortkeys (resp. innersortkeys) is NIL if the outer path
- * (resp. inner path) is already ordered appropriately for the
- * mergejoin.  If it is not NIL then it is a PathKeys list describing
- * the ordering that must be created by an explicit Sort node.
- *
- * skip_mark_restore is true if the executor need not do mark/restore calls.
- * Mark/restore overhead is usually required, but can be skipped if we know
- * that the executor need find only one match per outer tuple, and that the
- * mergeclauses are sufficient to identify a match.  In such cases the
- * executor can immediately advance the outer relation after processing a
- * match, and therefore it need never back up the inner relation.
- *
- * materialize_inner is true if a Material node should be placed atop the
- * inner input.  This may appear with or without an inner Sort step.
- */
-
-typedef struct MergePath
-{
-	JoinPath	jpath;
-	List	   *path_mergeclauses;	/* join clauses to be used for merge */
-	List	   *outersortkeys;	/* keys for explicit sort, if any */
-	List	   *innersortkeys;	/* keys for explicit sort, if any */
-	bool		skip_mark_restore;	/* can executor skip mark/restore? */
-	bool		materialize_inner;	/* add Materialize to inner? */
-} MergePath;
-
-/*
- * A hashjoin path has these fields.
- *
- * The remarks above for mergeclauses apply for hashclauses as well.
- *
- * Hashjoin does not care what order its inputs appear in, so we have
- * no need for sortkeys.
- */
-
-typedef struct HashPath
-{
-	JoinPath	jpath;
-	List	   *path_hashclauses;	/* join clauses used for hashing */
-	int			num_batches;	/* number of batches expected */
-	Cardinality inner_rows_total;	/* total inner rows expected */
-} HashPath;
 
 /*
  * ProjectionPath represents a projection (that is, targetlist computation)
@@ -1718,6 +1604,7 @@ typedef struct SortPath
 {
 	Path		path;
 	Path	   *subpath;		/* path representing input source */
+	double		limit_tuples;
 } SortPath;
 
 /*
@@ -1730,6 +1617,7 @@ typedef struct IncrementalSortPath
 {
 	SortPath	spath;
 	int			nPresortedCols; /* number of presorted columns */
+	double		limit_tuples;
 } IncrementalSortPath;
 
 /*
@@ -1746,6 +1634,7 @@ typedef struct GroupPath
 	Path	   *subpath;		/* path representing input source */
 	List	   *groupClause;	/* a list of SortGroupClause's */
 	List	   *qual;			/* quals (HAVING quals), if any */
+	double		num_groups;
 } GroupPath;
 
 /*
@@ -1778,6 +1667,8 @@ typedef struct AggPath
 	uint64		transitionSpace;	/* for pass-by-ref transition data */
 	List	   *groupClause;	/* a list of SortGroupClause's */
 	List	   *qual;			/* quals (HAVING quals), if any */
+	bool		aggcosts_valid;
+	AggClauseCosts aggcosts;
 } AggPath;
 
 /*
@@ -1814,6 +1705,10 @@ typedef struct GroupingSetsPath
 	List	   *rollups;		/* list of RollupData */
 	List	   *qual;			/* quals (HAVING quals), if any */
 	uint64		transitionSpace;	/* for pass-by-ref transition data */
+
+	double		num_groups;
+	bool		aggcosts_valid;
+	AggClauseCosts aggcosts;
 } GroupingSetsPath;
 
 /*
@@ -1915,6 +1810,8 @@ typedef struct LimitPath
 	Node	   *limitOffset;	/* OFFSET parameter, or NULL if none */
 	Node	   *limitCount;		/* COUNT parameter, or NULL if none */
 	LimitOption limitOption;	/* FETCH FIRST with ties or exact number */
+	int64		offset_est;
+	int64		count_est;
 } LimitPath;
 
 
@@ -2274,6 +2171,35 @@ struct SpecialJoinInfo
 };
 
 /*
+ * UniquePath represents elimination of distinct rows from the output of
+ * its subpath.
+ *
+ * This can represent significantly different plans: either hash-based or
+ * sort-based implementation, or a no-op if the input path can be proven
+ * distinct already.  The decision is sufficiently localized that it's not
+ * worth having separate Path node types.  (Note: in the no-op case, we could
+ * eliminate the UniquePath node entirely and just return the subpath; but
+ * it's convenient to have a UniquePath in the path tree to signal upper-level
+ * routines that the input is known distinct.)
+ */
+typedef enum UniquePathMethod
+{
+	UNIQUE_PATH_NOOP,			/* input is known unique already */
+	UNIQUE_PATH_HASH,			/* use hashing */
+	UNIQUE_PATH_SORT			/* use sorting */
+} UniquePathMethod;
+
+typedef struct UniquePath
+{
+	Path		path;
+	Path	   *subpath;
+	UniquePathMethod umethod;
+	List	   *in_operators;	/* equality operators of the IN clause */
+	List	   *uniq_exprs;		/* expressions to be made unique */
+	SpecialJoinInfo* sjinfo;
+} UniquePath;
+
+/*
  * Append-relation info.
  *
  * When we expand an inheritable table or a UNION-ALL subselect into an
@@ -2543,6 +2469,107 @@ typedef struct JoinPathExtraData
 	SemiAntiJoinFactors semifactors;
 	Relids		param_source_rels;
 } JoinPathExtraData;
+
+
+/*
+ * All join-type paths share these fields.
+ */
+
+typedef struct JoinPath
+{
+	Path		path;
+
+	JoinType	jointype;
+
+	bool		inner_unique;	/* each outer tuple provably matches no more
+								 * than one inner tuple */
+
+	Path	   *outerjoinpath;	/* path for the outer side of the join */
+	Path	   *innerjoinpath;	/* path for the inner side of the join */
+
+	List	   *joinrestrictinfo;	/* RestrictInfos to apply to join */
+
+	/*
+	 * See the notes for RelOptInfo and ParamPathInfo to understand why
+	 * joinrestrictinfo is needed in JoinPath, and can't be merged into the
+	 * parent RelOptInfo.
+	 */
+} JoinPath;
+
+/*
+ * A nested-loop path needs no special fields.
+ */
+
+typedef struct NestPath
+{
+	JoinPath	jpath;
+	struct JoinPathExtraData extra;
+} NestPath;
+
+/*
+ * A mergejoin path has these fields.
+ *
+ * Unlike other path types, a MergePath node doesn't represent just a single
+ * run-time plan node: it can represent up to four.  Aside from the MergeJoin
+ * node itself, there can be a Sort node for the outer input, a Sort node
+ * for the inner input, and/or a Material node for the inner input.  We could
+ * represent these nodes by separate path nodes, but considering how many
+ * different merge paths are investigated during a complex join problem,
+ * it seems better to avoid unnecessary palloc overhead.
+ *
+ * path_mergeclauses lists the clauses (in the form of RestrictInfos)
+ * that will be used in the merge.
+ *
+ * Note that the mergeclauses are a subset of the parent relation's
+ * restriction-clause list.  Any join clauses that are not mergejoinable
+ * appear only in the parent's restrict list, and must be checked by a
+ * qpqual at execution time.
+ *
+ * outersortkeys (resp. innersortkeys) is NIL if the outer path
+ * (resp. inner path) is already ordered appropriately for the
+ * mergejoin.  If it is not NIL then it is a PathKeys list describing
+ * the ordering that must be created by an explicit Sort node.
+ *
+ * skip_mark_restore is true if the executor need not do mark/restore calls.
+ * Mark/restore overhead is usually required, but can be skipped if we know
+ * that the executor need find only one match per outer tuple, and that the
+ * mergeclauses are sufficient to identify a match.  In such cases the
+ * executor can immediately advance the outer relation after processing a
+ * match, and therefore it need never back up the inner relation.
+ *
+ * materialize_inner is true if a Material node should be placed atop the
+ * inner input.  This may appear with or without an inner Sort step.
+ */
+
+typedef struct MergePath
+{
+	JoinPath	jpath;
+	List	   *path_mergeclauses;	/* join clauses to be used for merge */
+	List	   *outersortkeys;	/* keys for explicit sort, if any */
+	List	   *innersortkeys;	/* keys for explicit sort, if any */
+	bool		skip_mark_restore;	/* can executor skip mark/restore? */
+	bool		materialize_inner;	/* add Materialize to inner? */
+	struct JoinPathExtraData extra;
+} MergePath;
+
+/*
+ * A hashjoin path has these fields.
+ *
+ * The remarks above for mergeclauses apply for hashclauses as well.
+ *
+ * Hashjoin does not care what order its inputs appear in, so we have
+ * no need for sortkeys.
+ */
+
+typedef struct HashPath
+{
+	JoinPath	jpath;
+	List	   *path_hashclauses;	/* join clauses used for hashing */
+	int			num_batches;	/* number of batches expected */
+	Cardinality inner_rows_total;	/* total inner rows expected */
+	bool		parallel_hash;
+	struct JoinPathExtraData extra;
+} HashPath;
 
 /*
  * Various flags indicating what kinds of grouping are possible.

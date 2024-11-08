@@ -1024,6 +1024,8 @@ create_index_path(PlannerInfo *root,
 	pathnode->indexorderbys = indexorderbys;
 	pathnode->indexorderbycols = indexorderbycols;
 	pathnode->indexscandir = indexscandir;
+	pathnode->loop_count = loop_count;
+	pathnode->partial_path = partial_path;
 
 	cost_index(pathnode, root, loop_count, partial_path);
 
@@ -1063,6 +1065,7 @@ create_bitmap_heap_path(PlannerInfo *root,
 	pathnode->path.pathkeys = NIL;	/* always unordered */
 
 	pathnode->bitmapqual = bitmapqual;
+	pathnode->loop_count = loop_count;
 
 	cost_bitmap_heap_scan(&pathnode->path, root, rel,
 						  pathnode->path.param_info,
@@ -1683,6 +1686,7 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
+	pathnode->sjinfo = sjinfo;
 
 	/*
 	 * Assume the output is unsorted, since we don't necessarily have pathkeys
@@ -1908,6 +1912,8 @@ create_gather_merge_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	cost_gather_merge(pathnode, root, rel, pathnode->path.param_info,
 					  input_startup_cost, input_total_cost, rows);
 
+	pathnode->override_rows_valid = (rows != NULL);
+	pathnode->override_rows = (rows != NULL) ? *rows : 0;
 	return pathnode;
 }
 
@@ -1978,6 +1984,9 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	}
 
 	cost_gather(pathnode, root, rel, pathnode->path.param_info, rows);
+
+	pathnode->override_rows_valid = (rows != NULL);
+	pathnode->override_rows = (rows != NULL) ? *rows : 0;
 
 	return pathnode;
 }
@@ -2468,6 +2477,7 @@ create_nestloop_path(PlannerInfo *root,
 	pathnode->jpath.joinrestrictinfo = restrict_clauses;
 
 	final_cost_nestloop(root, pathnode, workspace, extra);
+	pathnode->extra = *extra;
 
 	return pathnode;
 }
@@ -2536,7 +2546,8 @@ create_mergejoin_path(PlannerInfo *root,
 	/* pathnode->skip_mark_restore will be set by final_cost_mergejoin */
 	/* pathnode->materialize_inner will be set by final_cost_mergejoin */
 
-	final_cost_mergejoin(root, pathnode, workspace, extra);
+	final_cost_mergejoin(root, pathnode, workspace, extra, false);
+	pathnode->extra = *extra;
 
 	return pathnode;
 }
@@ -2611,6 +2622,8 @@ create_hashjoin_path(PlannerInfo *root,
 	/* final_cost_hashjoin will fill in pathnode->num_batches */
 
 	final_cost_hashjoin(root, pathnode, workspace, extra);
+	pathnode->parallel_hash = parallel_hash;
+	pathnode->extra = *extra;
 
 	return pathnode;
 }
@@ -2924,6 +2937,7 @@ create_incremental_sort_path(PlannerInfo *root,
 						  work_mem, limit_tuples);
 
 	sort->nPresortedCols = presorted_keys;
+	sort->limit_tuples = limit_tuples;
 
 	return sort;
 }
@@ -2967,6 +2981,8 @@ create_sort_path(PlannerInfo *root,
 			  subpath->pathtarget->width,
 			  0.0,				/* XXX comparison_cost shouldn't be 0? */
 			  work_mem, limit_tuples);
+
+	pathnode->limit_tuples = limit_tuples;
 
 	return pathnode;
 }
@@ -3021,6 +3037,7 @@ create_group_path(PlannerInfo *root,
 	pathnode->path.startup_cost += target->cost.startup;
 	pathnode->path.total_cost += target->cost.startup +
 		target->cost.per_tuple * pathnode->path.rows;
+	pathnode->num_groups = numGroups;
 
 	return pathnode;
 }
@@ -3141,6 +3158,10 @@ create_agg_path(PlannerInfo *root,
 	pathnode->path.total_cost += target->cost.startup +
 		target->cost.per_tuple * pathnode->path.rows;
 
+	pathnode->aggcosts_valid = (aggcosts != NULL);
+	if (pathnode->aggcosts_valid)
+			pathnode->aggcosts = *aggcosts;
+
 	return pathnode;
 }
 
@@ -3186,6 +3207,11 @@ create_groupingsets_path(PlannerInfo *root,
 		subpath->parallel_safe;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->subpath = subpath;
+
+	pathnode->num_groups = numGroups;
+	pathnode->aggcosts_valid = (agg_costs != NULL);
+	if (pathnode->aggcosts_valid)
+			pathnode->aggcosts = *agg_costs;
 
 	/*
 	 * Simplify callers by downgrading AGG_SORTED to AGG_PLAIN, and AGG_MIXED
@@ -3760,6 +3786,8 @@ create_limit_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->limitOffset = limitOffset;
 	pathnode->limitCount = limitCount;
 	pathnode->limitOption = limitOption;
+	pathnode->offset_est = offset_est;
+	pathnode->count_est = count_est;
 
 	/*
 	 * Adjust the output rows count and costs according to the offset/limit.

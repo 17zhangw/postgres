@@ -72,6 +72,8 @@ bool		parallel_leader_participation = true;
 
 /* Hook for plugins to get control in planner() */
 planner_hook_type planner_hook = NULL;
+planner_pick_altsubplan_hook_type planner_pick_altsubplan_hook = NULL;
+planner_cost_scribble_hook_type planner_cost_scribble_hook = NULL;
 
 /* Hook for plugins to get control when grouping_planner() plans upper rels */
 create_upper_paths_hook_type create_upper_paths_hook = NULL;
@@ -410,6 +412,9 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	final_rel = fetch_upper_rel(root, UPPERREL_FINAL, NULL);
 	best_path = get_cheapest_fractional_path(final_rel, tuple_fraction);
 
+	if (planner_cost_scribble_hook)
+			planner_cost_scribble_hook(root, best_path);
+
 	top_plan = create_plan(root, best_path);
 
 	/*
@@ -615,6 +620,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	root->outer_params = NULL;
 	root->planner_cxt = CurrentMemoryContext;
 	root->init_plans = NIL;
+	root->noninit_plans = NIL;
 	root->cte_plan_ids = NIL;
 	root->multiexpr_params = NIL;
 	root->eq_classes = NIL;

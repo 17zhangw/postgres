@@ -1971,21 +1971,28 @@ fix_alternative_subplan(PlannerInfo *root, AlternativeSubPlan *asplan,
 	 * current usage it biases us to break ties against fast-start subplans.
 	 */
 	Assert(asplan->subplans != NIL);
-
-	foreach(lc, asplan->subplans)
+	if (planner_pick_altsubplan_hook != NULL)
 	{
-		SubPlan    *curplan = (SubPlan *) lfirst(lc);
-		Cost		curcost;
+			bestplan = planner_pick_altsubplan_hook(root, asplan->subplans);
+	}
 
-		curcost = curplan->startup_cost + num_exec * curplan->per_call_cost;
-		if (bestplan == NULL || curcost <= bestcost)
-		{
-			bestplan = curplan;
-			bestcost = curcost;
-		}
+	if (bestplan == NULL)
+	{
+			foreach(lc, asplan->subplans)
+			{
+					SubPlan    *curplan = (SubPlan *) lfirst(lc);
+					Cost		curcost;
 
-		/* Also mark all subplans that are in AlternativeSubPlans */
-		root->isAltSubplan[curplan->plan_id - 1] = true;
+					curcost = curplan->startup_cost + num_exec * curplan->per_call_cost;
+					if (bestplan == NULL || curcost <= bestcost)
+					{
+							bestplan = curplan;
+							bestcost = curcost;
+					}
+
+					/* Also mark all subplans that are in AlternativeSubPlans */
+					root->isAltSubplan[curplan->plan_id - 1] = true;
+			}
 	}
 
 	/* Mark the subplan we selected */

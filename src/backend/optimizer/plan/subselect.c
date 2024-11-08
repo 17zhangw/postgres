@@ -547,6 +547,8 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 
 	if (isInitPlan)
 		root->init_plans = lappend(root->init_plans, splan);
+	else
+		root->noninit_plans = lappend(root->noninit_plans, splan);
 
 	/*
 	 * A parameterless subplan (not initplan) should be prepared to handle

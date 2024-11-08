@@ -3454,7 +3454,8 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 void
 final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 					 JoinCostWorkspace *workspace,
-					 JoinPathExtraData *extra)
+					 JoinPathExtraData *extra,
+					 bool force_materialize_inner)
 {
 	Path	   *outer_path = path->jpath.outerjoinpath;
 	Path	   *inner_path = path->jpath.innerjoinpath;
@@ -3609,6 +3610,9 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	 */
 	if (path->skip_mark_restore)
 		path->materialize_inner = false;
+
+	else if (force_materialize_inner)
+		path->materialize_inner = true;
 
 	/*
 	 * Prefer materializing if it looks cheaper, unless the user has asked to

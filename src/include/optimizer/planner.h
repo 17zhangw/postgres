@@ -29,6 +29,11 @@ typedef PlannedStmt *(*planner_hook_type) (Query *parse,
 										   ParamListInfo boundParams);
 extern PGDLLIMPORT planner_hook_type planner_hook;
 
+typedef SubPlan* (*planner_pick_altsubplan_hook_type)(PlannerInfo* root, List* subplans);
+extern PGDLLIMPORT planner_pick_altsubplan_hook_type planner_pick_altsubplan_hook;
+typedef void (*planner_cost_scribble_hook_type)(PlannerInfo* root, Path* path);
+extern PGDLLIMPORT planner_cost_scribble_hook_type planner_cost_scribble_hook;
+
 /* Hook for plugins to get control when grouping_planner() plans upper rels */
 typedef void (*create_upper_paths_hook_type) (PlannerInfo *root,
 											  UpperRelationKind stage,
