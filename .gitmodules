@@ -1,3 +1,12 @@
 [submodule "cmudb/pg_hint_plan"]
 	path = cmudb/pg_hint_plan
 	url = https://github.com/ossc-db/pg_hint_plan
+[submodule "cmudb/hypocost"]
+	path = cmudb/hypocost
+	url = https://github.com/17zhangw/hypocost.git
+[submodule "cmudb/HypoPG"]
+	path = cmudb/HypoPG
+	url = https://github.com/HypoPG/HypoPG.git
+[submodule "cmudb/pgvector"]
+	path = cmudb/pgvector
+	url = https://github.com/pgvector/pgvector.git
