@@ -16,6 +16,7 @@
 
 #include "executor/execdesc.h"
 #include "fmgr.h"
+#include "nodes/execnodes.h"
 #include "nodes/lockoptions.h"
 #include "nodes/parsenodes.h"
 #include "utils/memutils.h"
@@ -255,6 +256,9 @@ ExecProcNode(PlanState *node)
 {
 	if (node->chgParam != NULL) /* something changed? */
 		ExecReScan(node);		/* let ReScan handle this */
+
+	if (node->boot_stop)
+		return NULL;
 
 	return node->ExecProcNode(node);
 }

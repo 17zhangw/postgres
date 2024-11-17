@@ -48,3 +48,13 @@ __pycache__
 /.doit.db
 /.idea/
 /.vscode/
+
+/.idea/
+/artifact*/
+/build/
+/data/
+/cmudb/boot_rs/target/debug/
+/cmudb/boot_rs/target/release/
+/cmudb/boot_rs/target/.rustc_info.json
+/cmudb/boot_rs/target/CACHEDIR.TAG
+/venv/
