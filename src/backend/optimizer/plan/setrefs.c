@@ -1976,23 +1976,20 @@ fix_alternative_subplan(PlannerInfo *root, AlternativeSubPlan *asplan,
 			bestplan = planner_pick_altsubplan_hook(root, asplan->subplans);
 	}
 
-	if (bestplan == NULL)
+	foreach(lc, asplan->subplans)
 	{
-			foreach(lc, asplan->subplans)
-			{
-					SubPlan    *curplan = (SubPlan *) lfirst(lc);
-					Cost		curcost;
+		SubPlan    *curplan = (SubPlan *) lfirst(lc);
+		Cost		curcost;
 
-					curcost = curplan->startup_cost + num_exec * curplan->per_call_cost;
-					if (bestplan == NULL || curcost <= bestcost)
-					{
-							bestplan = curplan;
-							bestcost = curcost;
-					}
+		curcost = curplan->startup_cost + num_exec * curplan->per_call_cost;
+		if (bestplan == NULL || curcost <= bestcost)
+		{
+			bestplan = curplan;
+			bestcost = curcost;
+		}
 
-					/* Also mark all subplans that are in AlternativeSubPlans */
-					root->isAltSubplan[curplan->plan_id - 1] = true;
-			}
+		/* Also mark all subplans that are in AlternativeSubPlans */
+		root->isAltSubplan[curplan->plan_id - 1] = true;
 	}
 
 	/* Mark the subplan we selected */
