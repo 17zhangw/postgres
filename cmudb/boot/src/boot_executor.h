@@ -1,13 +1,13 @@
 #pragma once
 
 // clang-format off
-#include "../../../../src/include/postgres.h"
-#include "../../../../src/include/fmgr.h"
+#include "postgres.h"
+#include "fmgr.h"
 // clang-format on
 
-#include "../../../../src/include/access/sdir.h"
-#include "../../../../src/include/executor/execdesc.h"
-#include "../../../../src/include/executor/executor.h"
+#include "access/sdir.h"
+#include "executor/execdesc.h"
+#include "executor/executor.h"
 #include "../../boot_rs/target/boot_rs.h"
 
 extern RuntimeState *runtime_state;

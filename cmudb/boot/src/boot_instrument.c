@@ -1,6 +1,6 @@
 #include "boot_instrument.h"
 
-#include "../../../../src/include/access/parallel.h"
+#include "access/parallel.h"
 #include "../../boot_rs/target/boot_rs.h"
 #include "boot.h"
 #include "boot_executor.h"

@@ -1,14 +1,14 @@
 // clang-format off
-#include "../../../../src/include/postgres.h"
-#include "../../../../src/include/fmgr.h"
-#include "../../../../src/include/utils/guc.h"
+#include "postgres.h"
+#include "fmgr.h"
+#include "utils/guc.h"
 // clang-format on
 
 #include "boot.h"
 
-#include "../../../../src/include/storage/ipc.h"
-#include "../../../../src/include/utils/builtins.h"
-#include "../../../../src/include/utils/queryjumble.h"
+#include "storage/ipc.h"
+#include "utils/builtins.h"
+#include "utils/queryjumble.h"
 #include "boot_Seqscan.h"
 #include "boot_executor.h"
 #include "boot_explain.h"

@@ -1,6 +1,6 @@
 #include "boot_util.h"
 
-#include "../../../../src/include/parser/scanner.h"
+#include "parser/scanner.h"
 
 static void fill_in_constant_lengths(JumbleState *jstate, const char *query, int query_loc);
 static int comp_location(const void *a, const void *b);

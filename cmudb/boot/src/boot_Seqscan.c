@@ -2,9 +2,9 @@
 
 #include <math.h>
 
-#include "../../../../src/include/access/relscan.h"
-#include "../../../../src/include/access/tableam.h"
-#include "../../../../src/include/common/hashfn.h"
+#include "access/relscan.h"
+#include "access/tableam.h"
+#include "common/hashfn.h"
 #include "boot.h"
 
 SeqNext_hook_type boot_prev_SeqNext_hook = NULL;

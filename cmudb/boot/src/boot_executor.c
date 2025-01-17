@@ -1,8 +1,8 @@
 #include "boot_executor.h"
 
-#include "../../../../src/include/access/parallel.h"
-#include "../../../../src/include/nodes/execnodes.h"
-#include "../../../../src/include/nodes/nodeFuncs.h"
+#include "access/parallel.h"
+#include "nodes/execnodes.h"
+#include "nodes/nodeFuncs.h"
 #include "boot.h"
 
 RuntimeState *runtime_state = NULL;
