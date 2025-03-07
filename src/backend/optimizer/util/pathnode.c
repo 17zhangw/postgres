@@ -3453,6 +3453,7 @@ create_windowagg_path(PlannerInfo *root,
 	pathnode->winclause = winclause;
 	pathnode->qual = qual;
 	pathnode->topwindow = topwindow;
+	pathnode->windowFuncs = windowFuncs;
 
 	/*
 	 * For costing purposes, assume that there are no redundant partitioning

@@ -1732,6 +1732,7 @@ typedef struct WindowAggPath
 	List	   *qual;			/* lower-level WindowAgg runconditions */
 	bool		topwindow;		/* false for all apart from the WindowAgg
 								 * that's closest to the root of the plan */
+	List	*windowFuncs;
 } WindowAggPath;
 
 /*
