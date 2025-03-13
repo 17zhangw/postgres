@@ -1961,7 +1961,7 @@ fix_alternative_subplan(PlannerInfo *root, AlternativeSubPlan *asplan,
 						double num_exec)
 {
 	SubPlan    *bestplan = NULL;
-	Cost		bestcost = 0;
+	Cost		bestcost = -1;
 	ListCell   *lc;
 
 	/*
