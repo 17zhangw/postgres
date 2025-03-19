@@ -3455,7 +3455,8 @@ void
 final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 					 JoinCostWorkspace *workspace,
 					 JoinPathExtraData *extra,
-					 bool force_materialize_inner)
+					 bool force_materialize_inner,
+					 bool force_nomaterialize_inner)
 {
 	Path	   *outer_path = path->jpath.outerjoinpath;
 	Path	   *inner_path = path->jpath.innerjoinpath;
@@ -3609,6 +3610,9 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	 * If we don't need mark/restore at all, we don't need materialization.
 	 */
 	if (path->skip_mark_restore)
+		path->materialize_inner = false;
+
+	else if (force_nomaterialize_inner)
 		path->materialize_inner = false;
 
 	else if (force_materialize_inner)

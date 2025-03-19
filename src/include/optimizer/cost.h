@@ -155,7 +155,8 @@ extern void initial_cost_mergejoin(PlannerInfo *root,
 extern void final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 								 JoinCostWorkspace *workspace,
 								 JoinPathExtraData *extra,
-								 bool force_materialize_inner);
+								 bool force_materialize_inner,
+								 bool force_nomaterialize_inner);
 extern void initial_cost_hashjoin(PlannerInfo *root,
 								  JoinCostWorkspace *workspace,
 								  JoinType jointype,

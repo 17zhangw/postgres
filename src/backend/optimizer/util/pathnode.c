@@ -2546,7 +2546,7 @@ create_mergejoin_path(PlannerInfo *root,
 	/* pathnode->skip_mark_restore will be set by final_cost_mergejoin */
 	/* pathnode->materialize_inner will be set by final_cost_mergejoin */
 
-	final_cost_mergejoin(root, pathnode, workspace, extra, false);
+	final_cost_mergejoin(root, pathnode, workspace, extra, false, false);
 	pathnode->extra = *extra;
 
 	return pathnode;
