@@ -1,6 +1,6 @@
 [submodule "cmudb/HypoPG"]
 	path = cmudb/HypoPG
-	url = https://github.com/HypoPG/HypoPG.git
+	url = https://github.com/17zhangw/hypopg.git
 [submodule "cmudb/pg_hint_plan"]
 	path = cmudb/pg_hint_plan
 	url = https://github.com/ossc-db/pg_hint_plan.git
