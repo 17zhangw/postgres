@@ -155,6 +155,14 @@ postgres.txt: postgres.html
 	$(PANDOC) -t plain -o $@ $<
 
 
+HTMLS := $(wildcard $(srcdir)/html/*.html)
+MDS := $(patsubst $(srcdir)/html/%.html,md/%.md,$(HTMLS))
+
+pandoc: $(MDS)
+	
+md/%.md: html/%.html
+	pandoc --wrap none --toc=false --list-of-figures=false --list-of-tables=false --strip-comments=true -f html -t gfm-raw_html-fenced_divs+raw_attribute $< -o $@
+
 ##
 ## Print
 ##
