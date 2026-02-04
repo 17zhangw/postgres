@@ -121,7 +121,6 @@ ExecWorkTableScan(PlanState *pstate)
 					(ExecScanRecheckMtd) WorkTableScanRecheck);
 }
 
-
 /* ----------------------------------------------------------------
  *		ExecInitWorkTableScan
  * ----------------------------------------------------------------

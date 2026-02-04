@@ -166,7 +166,6 @@ ExecCteScan(PlanState *pstate)
 					(ExecScanRecheckMtd) CteScanRecheck);
 }
 
-
 /* ----------------------------------------------------------------
  *		ExecInitCteScan
  * ----------------------------------------------------------------

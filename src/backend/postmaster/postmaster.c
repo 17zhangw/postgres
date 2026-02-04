@@ -127,7 +127,6 @@
 #include "storage/pg_shmem.h"
 #endif
 
-
 /*
  * Possible types of a backend. Beyond being the possible bkend_type values in
  * struct bkend, these are OR-able request flag bits for SignalSomeChildren()

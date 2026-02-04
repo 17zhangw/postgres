@@ -33,6 +33,7 @@
 #include "catalog/index.h"
 #include "catalog/storage.h"
 #include "catalog/storage_xlog.h"
+#include "cmudb/qss/qss.h"
 #include "commands/progress.h"
 #include "executor/executor.h"
 #include "miscadmin.h"
@@ -381,6 +382,8 @@ tuple_lock_retry:
 	if (result == TM_Updated &&
 		(flags & TUPLE_LOCK_FLAG_FIND_LAST_VERSION))
 	{
+		ActiveQSSInstrumentAddCounter(2, 1);
+
 		/* Should not encounter speculative tuple on recheck */
 		Assert(!HeapTupleHeaderIsSpeculative(tuple->t_data));
 

@@ -40,6 +40,7 @@
 #include "access/relscan.h"
 #include "access/tableam.h"
 #include "access/visibilitymap.h"
+#include "cmudb/qss/qss.h"
 #include "executor/executor.h"
 #include "executor/nodeBitmapHeapscan.h"
 #include "miscadmin.h"
@@ -259,6 +260,11 @@ BitmapHeapNext(BitmapHeapScanState *node)
 				/* AM doesn't think this block is valid, skip */
 				continue;
 			}
+			else
+			{
+				// This is the case where we fetched a block successfully.
+				QSSInstrumentAddCounter(&(node->ss.ps), 0, 1);
+			}
 
 			/* Adjust the prefetch target */
 			BitmapAdjustPrefetchTarget(node);
@@ -309,6 +315,8 @@ BitmapHeapNext(BitmapHeapScanState *node)
 			node->tbmres = tbmres = NULL;
 			continue;
 		}
+
+		QSSInstrumentAddCounter(&(node->ss.ps), 2, 1);
 
 		/*
 		 * If we are using lossy info, we have to recheck the qual conditions
@@ -496,8 +504,10 @@ BitmapPrefetch(BitmapHeapScanState *node, TableScanDesc scan)
 											 tbmpre->blockno,
 											 &node->pvmbuffer));
 
-				if (!skip_fetch)
+				if (!skip_fetch) {
+					QSSInstrumentAddCounter(&(node->ss.ps), 3, 1);
 					PrefetchBuffer(scan->rs_rd, MAIN_FORKNUM, tbmpre->blockno);
+				}
 			}
 		}
 
@@ -547,8 +557,10 @@ BitmapPrefetch(BitmapHeapScanState *node, TableScanDesc scan)
 											 tbmpre->blockno,
 											 &node->pvmbuffer));
 
-				if (!skip_fetch)
+				if (!skip_fetch) {
+					QSSInstrumentAddCounter(&(node->ss.ps), 3, 1);
 					PrefetchBuffer(scan->rs_rd, MAIN_FORKNUM, tbmpre->blockno);
+				}
 			}
 		}
 	}

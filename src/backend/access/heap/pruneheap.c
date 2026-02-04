@@ -21,6 +21,7 @@
 #include "access/transam.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
+#include "cmudb/qss/qss.h"
 #include "commands/vacuum.h"
 #include "executor/instrument.h"
 #include "miscadmin.h"
@@ -368,6 +369,21 @@ heap_page_prune_and_freeze(Relation relation, Buffer buffer,
 	bool		do_hint;
 	bool		hint_bit_fpi;
 	int64		fpi_before = pgWalUsage.wal_fpi;
+
+	// Should be attached to scans only.
+	if (ActiveQSSInstrumentation &&
+		(ActiveQSSInstrumentation->node_tag == T_IndexScan ||
+		 ActiveQSSInstrumentation->node_tag == T_IndexOnlyScan)) {
+		ActiveQSSInstrumentAddCounter(3, 1);
+	}
+
+	if (ActiveQSSInstrumentation && ActiveQSSInstrumentation->node_tag == T_SeqScan) {
+		ActiveQSSInstrumentAddCounter(1, 1);
+	}
+
+	if (ActiveQSSInstrumentation && ActiveQSSInstrumentation->node_tag == T_BitmapHeapScan) {
+		ActiveQSSInstrumentAddCounter(4, 1);
+	}
 
 	/* Copy parameters to prstate */
 	prstate.vistest = vistest;

@@ -55,7 +55,7 @@ typedef struct
 
 static int	matview_maintenance_depth = 0;
 
-static void transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
+static void transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo, uint64_t queryId, void *es);
 static bool transientrel_receive(TupleTableSlot *slot, DestReceiver *self);
 static void transientrel_shutdown(DestReceiver *self);
 static void transientrel_destroy(DestReceiver *self);
@@ -422,6 +422,7 @@ refresh_matview_datafill(DestReceiver *dest, Query *query,
 
 	/* Create a QueryDesc, redirecting output to our tuple receiver */
 	queryDesc = CreateQueryDesc(plan, queryString,
+								0 /* no generation */,
 								GetActiveSnapshot(), InvalidSnapshot,
 								dest, NULL, NULL, 0);
 
@@ -463,7 +464,7 @@ CreateTransientRelDestReceiver(Oid transientoid)
  * transientrel_startup --- executor startup
  */
 static void
-transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
+transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo, uint64_t queryId, void *es)
 {
 	DR_transientrel *myState = (DR_transientrel *) self;
 	Relation	transientrel;

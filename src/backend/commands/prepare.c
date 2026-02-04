@@ -44,9 +44,6 @@
 static HTAB *prepared_queries = NULL;
 
 static void InitQueryHashTable(void);
-static ParamListInfo EvaluateParams(ParseState *pstate,
-									PreparedStatement *pstmt, List *params,
-									EState *estate);
 static Datum build_regtype_array(Oid *param_types, int num_params);
 
 /*
@@ -274,7 +271,7 @@ ExecuteQuery(ParseState *pstate,
  * CreateQueryDesc(), which allows the executor to make use of the parameters
  * during query execution.
  */
-static ParamListInfo
+ParamListInfo
 EvaluateParams(ParseState *pstate, PreparedStatement *pstmt, List *params,
 			   EState *estate)
 {

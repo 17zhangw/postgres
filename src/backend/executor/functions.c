@@ -158,7 +158,7 @@ static bool coerce_fn_result_column(TargetEntry *src_tle,
 									bool tlist_is_modifiable,
 									List **upper_tlist,
 									bool *upper_tlist_nontrivial);
-static void sqlfunction_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
+static void sqlfunction_startup(DestReceiver *self, int operation, TupleDesc typeinfo, uint64_t queryId, void *es);
 static bool sqlfunction_receive(TupleTableSlot *slot, DestReceiver *self);
 static void sqlfunction_shutdown(DestReceiver *self);
 static void sqlfunction_destroy(DestReceiver *self);
@@ -841,6 +841,7 @@ postquel_start(execution_state *es, SQLFunctionCachePtr fcache)
 
 	es->qd = CreateQueryDesc(es->stmt,
 							 fcache->src,
+							 -1 /* no generation */,
 							 GetActiveSnapshot(),
 							 InvalidSnapshot,
 							 dest,
@@ -2085,7 +2086,7 @@ CreateSQLFunctionDestReceiver(void)
  * sqlfunction_startup --- executor startup
  */
 static void
-sqlfunction_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
+sqlfunction_startup(DestReceiver *self, int operation, TupleDesc typeinfo, uint64_t queryId, void *es)
 {
 	/* no-op */
 }

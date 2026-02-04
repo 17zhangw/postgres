@@ -73,7 +73,6 @@ ExecNamedTuplestoreScan(PlanState *pstate)
 					(ExecScanRecheckMtd) NamedTuplestoreScanRecheck);
 }
 
-
 /* ----------------------------------------------------------------
  *		ExecInitNamedTuplestoreScan
  * ----------------------------------------------------------------

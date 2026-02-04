@@ -133,7 +133,6 @@ ExecForeignScan(PlanState *pstate)
 					(ExecScanRecheckMtd) ForeignRecheck);
 }
 
-
 /* ----------------------------------------------------------------
  *		ExecInitForeignScan
  * ----------------------------------------------------------------

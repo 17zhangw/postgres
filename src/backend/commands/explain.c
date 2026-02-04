@@ -15,6 +15,7 @@
 
 #include "access/xact.h"
 #include "catalog/pg_type.h"
+#include "cmudb/qss/qss.h"
 #include "commands/createas.h"
 #include "commands/defrem.h"
 #include "commands/prepare.h"
@@ -45,6 +46,9 @@
 /* Hook for plugins to get control in ExplainOneQuery() */
 ExplainOneQuery_hook_type ExplainOneQuery_hook = NULL;
 
+/* Hook for plugins to get control in ExplainOneUtility() */
+ExplainOneUtility_hook_type ExplainOneUtility_hook = NULL;
+
 /* Hook for plugins to get control in explain_get_index_name() */
 explain_get_index_name_hook_type explain_get_index_name_hook = NULL;
 
@@ -68,11 +72,6 @@ typedef struct SerializeMetrics
  * to the next whole kilobyte.
  */
 #define BYTES_TO_KILOBYTES(b) (((b) + 1023) / 1024)
-
-static void ExplainOneQuery(Query *query, int cursorOptions,
-							IntoClause *into, ExplainState *es,
-							const char *queryString, ParamListInfo params,
-							QueryEnvironment *queryEnv);
 static void ExplainPrintJIT(ExplainState *es, int jit_flags,
 							JitInstrumentation *ji);
 static void ExplainPrintSerialize(ExplainState *es,
@@ -80,7 +79,6 @@ static void ExplainPrintSerialize(ExplainState *es,
 static void report_triggers(ResultRelInfo *rInfo, bool show_relname,
 							ExplainState *es);
 static double elapsed_time(instr_time *starttime);
-static bool ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used);
 static void ExplainNode(PlanState *planstate, List *ancestors,
 						const char *relationship, const char *plan_name,
 						ExplainState *es);
@@ -88,13 +86,13 @@ static void show_plan_tlist(PlanState *planstate, List *ancestors,
 							ExplainState *es);
 static void show_expression(Node *node, const char *qlabel,
 							PlanState *planstate, List *ancestors,
-							bool useprefix, ExplainState *es);
+							bool useprefix, bool preserve_param, ExplainState *es);
 static void show_qual(List *qual, const char *qlabel,
 					  PlanState *planstate, List *ancestors,
-					  bool useprefix, ExplainState *es);
+					  bool useprefix, bool preserve_param, ExplainState *es);
 static void show_scan_qual(List *qual, const char *qlabel,
 						   PlanState *planstate, List *ancestors,
-						   ExplainState *es);
+						   bool preserve_param, ExplainState *es);
 static void show_upper_qual(List *qual, const char *qlabel,
 							PlanState *planstate, List *ancestors,
 							ExplainState *es);
@@ -256,6 +254,8 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt,
 				es->format = EXPLAIN_FORMAT_TEXT;
 			else if (strcmp(p, "xml") == 0)
 				es->format = EXPLAIN_FORMAT_XML;
+			else if (strcmp(p, "noisepage") == 0)
+				es->format = EXPLAIN_FORMAT_NOISEPAGE;
 			else if (strcmp(p, "json") == 0)
 				es->format = EXPLAIN_FORMAT_JSON;
 			else if (strcmp(p, "yaml") == 0)
@@ -424,7 +424,7 @@ ExplainResultDesc(ExplainStmt *stmt)
  *
  * "into" is NULL unless we are explaining the contents of a CreateTableAsStmt.
  */
-static void
+void
 ExplainOneQuery(Query *query, int cursorOptions,
 				IntoClause *into, ExplainState *es,
 				const char *queryString, ParamListInfo params,
@@ -433,8 +433,11 @@ ExplainOneQuery(Query *query, int cursorOptions,
 	/* planner will not cope with utility statements */
 	if (query->commandType == CMD_UTILITY)
 	{
-		ExplainOneUtility(query->utilityStmt, into, es, queryString, params,
-						  queryEnv);
+		if (ExplainOneUtility_hook)
+			(*ExplainOneUtility_hook) (query->utilityStmt, into, es, queryString, params, queryEnv);
+		else
+			ExplainOneUtility(query->utilityStmt, into, es, queryString, params, queryEnv);
+
 		return;
 	}
 
@@ -670,7 +673,7 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 		dest = None_Receiver;
 
 	/* Create a QueryDesc for the query */
-	queryDesc = CreateQueryDesc(plannedstmt, queryString,
+	queryDesc = CreateQueryDesc(plannedstmt, queryString, 0,
 								GetActiveSnapshot(), InvalidSnapshot,
 								dest, params, queryEnv, instrument_option);
 
@@ -1288,8 +1291,7 @@ elapsed_time(instr_time *starttime)
  * This ensures that we don't confusingly assign un-suffixed aliases to RTEs
  * that never appear in the EXPLAIN output (such as inheritance parents).
  */
-static bool
-ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used)
+bool ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used)
 {
 	Plan	   *plan = planstate->plan;
 
@@ -1342,42 +1344,19 @@ ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used)
 	return planstate_tree_walker(planstate, ExplainPreScanNode, rels_used);
 }
 
-/*
- * ExplainNode -
- *	  Appends a description of a plan tree to es->str
- *
- * planstate points to the executor state node for the current plan node.
- * We need to work from a PlanState node, not just a Plan node, in order to
- * get at the instrumentation data (if any) as well as the list of subplans.
- *
- * ancestors is a list of parent Plan and SubPlan nodes, most-closely-nested
- * first.  These are needed in order to interpret PARAM_EXEC Params.
- *
- * relationship describes the relationship of this plan node to its parent
- * (eg, "Outer", "Inner"); it can be null at top level.  plan_name is an
- * optional name to be attached to the node.
- *
- * In text format, es->indent is controlled in this function since we only
- * want it to change at plan-node boundaries (but a few subroutines will
- * transiently increment it).  In non-text formats, es->indent corresponds
- * to the nesting depth of logical output groups, and therefore is controlled
- * by ExplainOpenGroup/ExplainCloseGroup.
- */
-static void
-ExplainNode(PlanState *planstate, List *ancestors,
-			const char *relationship, const char *plan_name,
-			ExplainState *es)
+void
+ExplainNodeMetadata(PlanState *planstate, List *ancestors,
+					const char *relationship, const char *plan_name,
+					ExplainState *es, bool preserve_param)
 {
 	Plan	   *plan = planstate->plan;
+	ExplainWorkersState *save_workers_state = es->workers_state;
 	const char *pname;			/* node type name for text output */
 	const char *sname;			/* node type name for non-text output */
-	const char *strategy = NULL;
-	const char *partialmode = NULL;
 	const char *operation = NULL;
+	const char *partialmode = NULL;
 	const char *custom_name = NULL;
-	ExplainWorkersState *save_workers_state = es->workers_state;
-	int			save_indent = es->indent;
-	bool		haschildren;
+	const char *strategy = NULL;
 
 	/*
 	 * Prepare per-worker output buffers, if needed.  We'll append the data in
@@ -1623,10 +1602,6 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			pname = sname = "???";
 			break;
 	}
-
-	ExplainOpenGroup("Plan",
-					 relationship ? NULL : "Plan",
-					 true, es);
 
 	if (es->format == EXPLAIN_FORMAT_TEXT)
 	{
@@ -1966,26 +1941,26 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	{
 		case T_IndexScan:
 			show_scan_qual(((IndexScan *) plan)->indexqualorig,
-						   "Index Cond", planstate, ancestors, es);
+						   "Index Cond", planstate, ancestors, preserve_param, es);
 			if (((IndexScan *) plan)->indexqualorig)
 				show_instrumentation_count("Rows Removed by Index Recheck", 2,
 										   planstate, es);
 			show_scan_qual(((IndexScan *) plan)->indexorderbyorig,
-						   "Order By", planstate, ancestors, es);
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+						   "Order By", planstate, ancestors, preserve_param, es);
+			show_scan_qual(plan->qual, "Filter", planstate, ancestors, preserve_param, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			break;
 		case T_IndexOnlyScan:
 			show_scan_qual(((IndexOnlyScan *) plan)->indexqual,
-						   "Index Cond", planstate, ancestors, es);
+						   "Index Cond", planstate, ancestors, preserve_param, es);
 			if (((IndexOnlyScan *) plan)->recheckqual)
 				show_instrumentation_count("Rows Removed by Index Recheck", 2,
 										   planstate, es);
 			show_scan_qual(((IndexOnlyScan *) plan)->indexorderby,
-						   "Order By", planstate, ancestors, es);
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+						   "Order By", planstate, ancestors, preserve_param, es);
+			show_scan_qual(plan->qual, "Filter", planstate, ancestors, preserve_param, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -1995,15 +1970,15 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_BitmapIndexScan:
 			show_scan_qual(((BitmapIndexScan *) plan)->indexqualorig,
-						   "Index Cond", planstate, ancestors, es);
+						   "Index Cond", planstate, ancestors, preserve_param, es);
 			break;
 		case T_BitmapHeapScan:
 			show_scan_qual(((BitmapHeapScan *) plan)->bitmapqualorig,
-						   "Recheck Cond", planstate, ancestors, es);
+						   "Recheck Cond", planstate, ancestors, preserve_param, es);
 			if (((BitmapHeapScan *) plan)->bitmapqualorig)
 				show_instrumentation_count("Rows Removed by Index Recheck", 2,
 										   planstate, es);
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_scan_qual(plan->qual, "Filter", planstate, ancestors, preserve_param, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -2021,7 +1996,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_NamedTuplestoreScan:
 		case T_WorkTableScan:
 		case T_SubqueryScan:
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_scan_qual(plan->qual, "Filter", planstate, ancestors, preserve_param, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -2030,7 +2005,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			{
 				Gather	   *gather = (Gather *) plan;
 
-				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				show_scan_qual(plan->qual, "Filter", planstate, ancestors, preserve_param, es);
 				if (plan->qual)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
@@ -2054,7 +2029,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			{
 				GatherMerge *gm = (GatherMerge *) plan;
 
-				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				show_scan_qual(plan->qual, "Filter", planstate, ancestors, preserve_param, es);
 				if (plan->qual)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
@@ -2086,9 +2061,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				/* We rely on show_expression to insert commas as needed */
 				show_expression((Node *) fexprs,
 								"Function Call", planstate, ancestors,
-								es->verbose, es);
+								es->verbose, false, es);
 			}
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_scan_qual(plan->qual, "Filter", planstate, ancestors, preserve_param, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -2100,9 +2075,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 
 				show_expression((Node *) tablefunc,
 								"Table Function Call", planstate, ancestors,
-								es->verbose, es);
+								es->verbose, false, es);
 			}
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_scan_qual(plan->qual, "Filter", planstate, ancestors, preserve_param, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -2117,8 +2092,8 @@ ExplainNode(PlanState *planstate, List *ancestors,
 
 				if (list_length(tidquals) > 1)
 					tidquals = list_make1(make_orclause(tidquals));
-				show_scan_qual(tidquals, "TID Cond", planstate, ancestors, es);
-				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				show_scan_qual(tidquals, "TID Cond", planstate, ancestors, preserve_param, es);
+				show_scan_qual(plan->qual, "Filter", planstate, ancestors, preserve_param, es);
 				if (plan->qual)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
@@ -2134,15 +2109,15 @@ ExplainNode(PlanState *planstate, List *ancestors,
 
 				if (list_length(tidquals) > 1)
 					tidquals = list_make1(make_andclause(tidquals));
-				show_scan_qual(tidquals, "TID Cond", planstate, ancestors, es);
-				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				show_scan_qual(tidquals, "TID Cond", planstate, ancestors, preserve_param, es);
+				show_scan_qual(plan->qual, "Filter", planstate, ancestors, preserve_param, es);
 				if (plan->qual)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
 			}
 			break;
 		case T_ForeignScan:
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_scan_qual(plan->qual, "Filter", planstate, ancestors, preserve_param, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -2152,7 +2127,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			{
 				CustomScanState *css = (CustomScanState *) planstate;
 
-				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				show_scan_qual(plan->qual, "Filter", planstate, ancestors, preserve_param, es);
 				if (plan->qual)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
@@ -2334,6 +2309,41 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 	}
 
+}
+
+/*
+ * ExplainNode -
+ *	  Appends a description of a plan tree to es->str
+ *
+ * planstate points to the executor state node for the current plan node.
+ * We need to work from a PlanState node, not just a Plan node, in order to
+ * get at the instrumentation data (if any) as well as the list of subplans.
+ *
+ * ancestors is a list of parent Plan and SubPlan nodes, most-closely-nested
+ * first.  These are needed in order to interpret PARAM_EXEC Params.
+ *
+ * relationship describes the relationship of this plan node to its parent
+ * (eg, "Outer", "Inner"); it can be null at top level.  plan_name is an
+ * optional name to be attached to the node.
+ *
+ * In text format, es->indent is controlled in this function since we only
+ * want it to change at plan-node boundaries (but a few subroutines will
+ * transiently increment it).  In non-text formats, es->indent corresponds
+ * to the nesting depth of logical output groups, and therefore is controlled
+ * by ExplainOpenGroup/ExplainCloseGroup.
+ */
+static void
+ExplainNode(PlanState *planstate, List *ancestors,
+			const char *relationship, const char *plan_name,
+			ExplainState *es)
+{
+	Plan	   *plan = planstate->plan;
+	int			save_indent = es->indent;
+	bool		haschildren;
+
+	ExplainOpenGroup("Plan", relationship ? NULL : "Plan", true, es);
+	ExplainNodeMetadata(planstate, ancestors, relationship, plan_name, es, false);
+
 	/* Get ready to display the child plans */
 	haschildren = planstate->initPlan ||
 		outerPlanState(planstate) ||
@@ -2417,9 +2427,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	if (es->format == EXPLAIN_FORMAT_TEXT)
 		es->indent = save_indent;
 
-	ExplainCloseGroup("Plan",
-					  relationship ? NULL : "Plan",
-					  true, es);
+	ExplainCloseGroup("Plan", relationship ? NULL : "Plan", true, es);
 }
 
 /*
@@ -2486,7 +2494,7 @@ show_plan_tlist(PlanState *planstate, List *ancestors, ExplainState *es)
 static void
 show_expression(Node *node, const char *qlabel,
 				PlanState *planstate, List *ancestors,
-				bool useprefix, ExplainState *es)
+				bool useprefix, bool preserve_param, ExplainState *es)
 {
 	List	   *context;
 	char	   *exprstr;
@@ -2497,7 +2505,14 @@ show_expression(Node *node, const char *qlabel,
 									   ancestors);
 
 	/* Deparse the expression */
-	exprstr = deparse_expression(node, context, useprefix, false);
+	if (preserve_param)
+	{
+		exprstr = deparse_expression_preserve_param(node, context, useprefix, false);
+	}
+	else
+	{
+		exprstr = deparse_expression(node, context, useprefix, false);
+	}
 
 	/* And add to es->str */
 	ExplainPropertyText(qlabel, exprstr, es);
@@ -2509,7 +2524,7 @@ show_expression(Node *node, const char *qlabel,
 static void
 show_qual(List *qual, const char *qlabel,
 		  PlanState *planstate, List *ancestors,
-		  bool useprefix, ExplainState *es)
+		  bool useprefix, bool preserve_param, ExplainState *es)
 {
 	Node	   *node;
 
@@ -2521,7 +2536,7 @@ show_qual(List *qual, const char *qlabel,
 	node = (Node *) make_ands_explicit(qual);
 
 	/* And show it */
-	show_expression(node, qlabel, planstate, ancestors, useprefix, es);
+	show_expression(node, qlabel, planstate, ancestors, useprefix, preserve_param, es);
 }
 
 /*
@@ -2530,12 +2545,12 @@ show_qual(List *qual, const char *qlabel,
 static void
 show_scan_qual(List *qual, const char *qlabel,
 			   PlanState *planstate, List *ancestors,
-			   ExplainState *es)
+			   bool preserve_param, ExplainState *es)
 {
 	bool		useprefix;
 
 	useprefix = (IsA(planstate->plan, SubqueryScan) || es->verbose);
-	show_qual(qual, qlabel, planstate, ancestors, useprefix, es);
+	show_qual(qual, qlabel, planstate, ancestors, useprefix, preserve_param, es);
 }
 
 /*
@@ -2549,7 +2564,7 @@ show_upper_qual(List *qual, const char *qlabel,
 	bool		useprefix;
 
 	useprefix = (list_length(es->rtable) > 1 || es->verbose);
-	show_qual(qual, qlabel, planstate, ancestors, useprefix, es);
+	show_qual(qual, qlabel, planstate, ancestors, useprefix, false, es);
 }
 
 /*
@@ -4659,6 +4674,10 @@ ExplainPropertyList(const char *qlabel, List *data, ExplainState *es)
 			ExplainXMLTag(qlabel, X_CLOSING, es);
 			break;
 
+
+	case EXPLAIN_FORMAT_NOISEPAGE:
+		// fall through to JSON
+
 		case EXPLAIN_FORMAT_JSON:
 			ExplainJSONLineEnding(es);
 			appendStringInfoSpaces(es->str, es->indent * 2);
@@ -4688,6 +4707,31 @@ ExplainPropertyList(const char *qlabel, List *data, ExplainState *es)
 	}
 }
 
+void
+ExplainPropertyOidList(const char* qlabel, List *data, ExplainState *es)
+{
+	ListCell   *lc;
+	bool		first = true;
+	Assert(es->format == EXPLAIN_FORMAT_NOISEPAGE);
+
+	ExplainJSONLineEnding(es);
+	appendStringInfoSpaces(es->str, es->indent * 2);
+	escape_json(es->str, qlabel);
+	appendStringInfoString(es->str, ": [");
+	foreach(lc, data)
+	{
+		char buf[32];
+		int64 value = lfirst_oid(lc);
+		snprintf(buf, sizeof(buf), INT64_FORMAT, value);
+		if (!first)
+			appendStringInfoString(es->str, ", ");
+
+		appendStringInfoString(es->str, buf);
+		first = false;
+	}
+	appendStringInfoChar(es->str, ']');
+}
+
 /*
  * Explain a property that takes the form of a list of unlabeled items within
  * another list.  "data" is a list of C strings.
@@ -4704,6 +4748,10 @@ ExplainPropertyListNested(const char *qlabel, List *data, ExplainState *es)
 		case EXPLAIN_FORMAT_XML:
 			ExplainPropertyList(qlabel, data, es);
 			return;
+
+
+	case EXPLAIN_FORMAT_NOISEPAGE:
+		// fall through to JSON
 
 		case EXPLAIN_FORMAT_JSON:
 			ExplainJSONLineEnding(es);
@@ -4772,6 +4820,10 @@ ExplainProperty(const char *qlabel, const char *unit, const char *value,
 				appendStringInfoChar(es->str, '\n');
 			}
 			break;
+
+
+	case EXPLAIN_FORMAT_NOISEPAGE:
+		// fall through to JSON
 
 		case EXPLAIN_FORMAT_JSON:
 			ExplainJSONLineEnding(es);
@@ -4878,6 +4930,10 @@ ExplainOpenGroup(const char *objtype, const char *labelname,
 			es->indent++;
 			break;
 
+
+	case EXPLAIN_FORMAT_NOISEPAGE:
+		// fall through to JSON
+
 		case EXPLAIN_FORMAT_JSON:
 			ExplainJSONLineEnding(es);
 			appendStringInfoSpaces(es->str, 2 * es->indent);
@@ -4941,6 +4997,10 @@ ExplainCloseGroup(const char *objtype, const char *labelname,
 			ExplainXMLTag(objtype, X_CLOSING, es);
 			break;
 
+
+	case EXPLAIN_FORMAT_NOISEPAGE:
+		// fall through to JSON
+
 		case EXPLAIN_FORMAT_JSON:
 			es->indent--;
 			appendStringInfoChar(es->str, '\n');
@@ -4987,6 +5047,10 @@ ExplainOpenSetAsideGroup(const char *objtype, const char *labelname,
 			es->indent += depth;
 			break;
 
+
+	case EXPLAIN_FORMAT_NOISEPAGE:
+		// fall through to JSON
+
 		case EXPLAIN_FORMAT_JSON:
 			es->grouping_stack = lcons_int(0, es->grouping_stack);
 			es->indent += depth;
@@ -5025,6 +5089,10 @@ ExplainSaveGroup(ExplainState *es, int depth, int *state_save)
 			es->indent -= depth;
 			break;
 
+
+	case EXPLAIN_FORMAT_NOISEPAGE:
+		// fall through to JSON
+
 		case EXPLAIN_FORMAT_JSON:
 			es->indent -= depth;
 			*state_save = linitial_int(es->grouping_stack);
@@ -5054,6 +5122,10 @@ ExplainRestoreGroup(ExplainState *es, int depth, int *state_save)
 		case EXPLAIN_FORMAT_XML:
 			es->indent += depth;
 			break;
+
+
+	case EXPLAIN_FORMAT_NOISEPAGE:
+		// fall through to JSON
 
 		case EXPLAIN_FORMAT_JSON:
 			es->grouping_stack = lcons_int(*state_save, es->grouping_stack);
@@ -5085,6 +5157,10 @@ ExplainDummyGroup(const char *objtype, const char *labelname, ExplainState *es)
 		case EXPLAIN_FORMAT_XML:
 			ExplainXMLTag(objtype, X_CLOSE_IMMEDIATE, es);
 			break;
+
+
+	case EXPLAIN_FORMAT_NOISEPAGE:
+		// fall through to JSON
 
 		case EXPLAIN_FORMAT_JSON:
 			ExplainJSONLineEnding(es);
@@ -5134,6 +5210,10 @@ ExplainBeginOutput(ExplainState *es)
 			es->indent++;
 			break;
 
+
+	case EXPLAIN_FORMAT_NOISEPAGE:
+		// fall through to JSON
+
 		case EXPLAIN_FORMAT_JSON:
 			/* top-level structure is an array of plans */
 			appendStringInfoChar(es->str, '[');
@@ -5164,6 +5244,10 @@ ExplainEndOutput(ExplainState *es)
 			appendStringInfoString(es->str, "</explain>");
 			break;
 
+
+	case EXPLAIN_FORMAT_NOISEPAGE:
+		// fall through to JSON
+
 		case EXPLAIN_FORMAT_JSON:
 			es->indent--;
 			appendStringInfoString(es->str, "\n]");
@@ -5190,6 +5274,7 @@ ExplainSeparatePlans(ExplainState *es)
 			break;
 
 		case EXPLAIN_FORMAT_XML:
+	case EXPLAIN_FORMAT_NOISEPAGE:
 		case EXPLAIN_FORMAT_JSON:
 		case EXPLAIN_FORMAT_YAML:
 			/* nothing to do */
@@ -5253,7 +5338,7 @@ ExplainIndentText(ExplainState *es)
 static void
 ExplainJSONLineEnding(ExplainState *es)
 {
-	Assert(es->format == EXPLAIN_FORMAT_JSON);
+	Assert(es->format == EXPLAIN_FORMAT_JSON || es->format == EXPLAIN_FORMAT_NOISEPAGE);
 	if (linitial_int(es->grouping_stack) != 0)
 		appendStringInfoChar(es->str, ',');
 	else

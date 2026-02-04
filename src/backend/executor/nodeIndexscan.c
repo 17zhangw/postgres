@@ -33,6 +33,7 @@
 #include "access/relscan.h"
 #include "access/tableam.h"
 #include "catalog/pg_am.h"
+#include "cmudb/qss/qss.h"
 #include "executor/executor.h"
 #include "executor/nodeIndexscan.h"
 #include "lib/pairingheap.h"
@@ -127,8 +128,12 @@ IndexNext(IndexScanState *node)
 	/*
 	 * ok, now that we have what we need, fetch the next tuple.
 	 */
+	ActiveQSSInstrumentation = node->ss.ps.instrument;
 	while (index_getnext_slot(scandesc, direction, slot))
 	{
+		QSSInstrumentAddCounter(node, 0, 1);
+		QSSInstrumentAddCounter(node, 1, 1);
+
 		CHECK_FOR_INTERRUPTS();
 
 		/*
@@ -146,8 +151,10 @@ IndexNext(IndexScanState *node)
 			}
 		}
 
+		ActiveQSSInstrumentation = NULL;
 		return slot;
 	}
+	ActiveQSSInstrumentation = NULL;
 
 	/*
 	 * if we get here it means the index scan failed so we are at the end of
@@ -550,6 +557,8 @@ ExecIndexScan(PlanState *pstate)
 void
 ExecReScanIndexScan(IndexScanState *node)
 {
+	QSSInstrumentAddCounter(node, 2, 1);
+
 	/*
 	 * If we are doing runtime key calculations (ie, any of the index key
 	 * values weren't simple Consts), compute the new key values.  But first,
@@ -888,6 +897,15 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	IndexScanState *indexstate;
 	Relation	currentRelation;
 	LOCKMODE	lockmode;
+	Instrumentation *instr = NULL;
+	if (qss_capture_nested && (~(eflags & EXEC_FLAG_EXPLAIN_ONLY)))
+	{
+		instr = AllocQSSInstrumentation("InitIndexScan", true);
+		if (instr != NULL)
+		{
+			InstrStartNode(instr);
+		}
+	}
 
 	/*
 	 * create state structure
@@ -948,7 +966,10 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	 * references to nonexistent indexes.
 	 */
 	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
+	{
+		Assert(instr == NULL);
 		return indexstate;
+	}
 
 	/* Open the index relation. */
 	lockmode = exec_rt_fetch(node->scan.scanrelid, estate)->rellockmode;
@@ -1063,6 +1084,14 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	else
 	{
 		indexstate->iss_RuntimeContext = NULL;
+	}
+
+	if (instr != NULL)
+	{
+		QSSInstrumentAddCounterDirect(instr, 0, indexstate->iss_NumScanKeys);
+		QSSInstrumentAddCounterDirect(instr, 1, indexstate->iss_NumRuntimeKeys);
+		QSSInstrumentAddCounterDirect(instr, 2, indexstate->iss_NumOrderByKeys);
+		InstrStopNode(instr, 0.0);
 	}
 
 	/*

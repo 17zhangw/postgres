@@ -23,6 +23,7 @@
 
 #include "access/tableam.h"
 #include "access/xact.h"
+#include "cmudb/qss/qss.h"
 #include "executor/executor.h"
 #include "executor/nodeLockRows.h"
 #include "foreign/fdwapi.h"
@@ -84,6 +85,9 @@ lnext:
 		int			lockflags = 0;
 		TM_Result	test;
 		TupleTableSlot *markSlot;
+
+		/* count the number of marks */
+		QSSInstrumentAddCounter(pstate, 0, 1);
 
 		/* clear any leftover test tuple for this rel */
 		markSlot = EvalPlanQualSlot(&node->lr_epqstate, erm->relation, erm->rti);
@@ -182,11 +186,13 @@ lnext:
 		if (!IsolationUsesXactSnapshot())
 			lockflags |= TUPLE_LOCK_FLAG_FIND_LAST_VERSION;
 
+		ActiveQSSInstrumentation = pstate->instrument;
 		test = table_tuple_lock(erm->relation, &tid, estate->es_snapshot,
 								markSlot, estate->es_output_cid,
 								lockmode, erm->waitPolicy,
 								lockflags,
 								&tmfd);
+		ActiveQSSInstrumentation = NULL;
 
 		switch (test)
 		{
@@ -256,6 +262,8 @@ lnext:
 	 */
 	if (epq_needed)
 	{
+		QSSInstrumentAddCounter(&(node->ps), 1, 1);
+
 		/* Initialize EPQ machinery */
 		EvalPlanQualBegin(&node->lr_epqstate);
 
@@ -294,6 +302,15 @@ ExecInitLockRows(LockRows *node, EState *estate, int eflags)
 	Plan	   *outerPlan = outerPlan(node);
 	List	   *epq_arowmarks;
 	ListCell   *lc;
+	Instrumentation *instr = NULL;
+	if (qss_capture_nested)
+	{
+		instr = AllocQSSInstrumentation("InitLockRows", true);
+		if (instr != NULL)
+		{
+			InstrStartNode(instr);
+		}
+	}
 
 	/* check for unsupported flags */
 	Assert(!(eflags & EXEC_FLAG_MARK));
@@ -321,7 +338,17 @@ ExecInitLockRows(LockRows *node, EState *estate, int eflags)
 	/*
 	 * then initialize outer plan
 	 */
+	if (instr != NULL)
+	{
+		InstrStopNode(instr, 0.0);
+	}
+
 	outerPlanState(lrstate) = ExecInitNode(outerPlan, estate, eflags);
+
+	if (instr != NULL)
+	{
+		InstrStartNode(instr);
+	}
 
 	/* node returns unmodified slots from the outer plan */
 	lrstate->ps.resultopsset = true;
@@ -365,11 +392,18 @@ ExecInitLockRows(LockRows *node, EState *estate, int eflags)
 			lrstate->lr_arowMarks = lappend(lrstate->lr_arowMarks, aerm);
 		else
 			epq_arowmarks = lappend(epq_arowmarks, aerm);
+
+		QSSInstrumentAddCounterDirect(instr, 0, 1);
 	}
 
 	/* Now we have the info needed to set up EPQ state */
 	EvalPlanQualInit(&lrstate->lr_epqstate, estate,
 					 outerPlan, epq_arowmarks, node->epqParam, NIL);
+
+	if (instr != NULL)
+	{
+		InstrStopNode(instr, 0.0);
+	}
 
 	return lrstate;
 }

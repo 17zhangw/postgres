@@ -179,15 +179,15 @@ static void copy_generic_path_info(Plan *dest, Path *src);
 static void copy_plan_costsize(Plan *dest, Plan *src);
 static void label_sort_with_costsize(PlannerInfo *root, Sort *plan,
 									 double limit_tuples);
-static SeqScan *make_seqscan(List *qptlist, List *qpqual, Index scanrelid);
+static SeqScan *make_seqscan(uint32_t est_pages_needed, List *qptlist, List *qpqual, Index scanrelid);
 static SampleScan *make_samplescan(List *qptlist, List *qpqual, Index scanrelid,
 								   TableSampleClause *tsc);
-static IndexScan *make_indexscan(List *qptlist, List *qpqual, Index scanrelid,
+static IndexScan *make_indexscan(uint32_t est_pages_needed, List *qptlist, List *qpqual, Index scanrelid,
 								 Oid indexid, List *indexqual, List *indexqualorig,
 								 List *indexorderby, List *indexorderbyorig,
 								 List *indexorderbyops,
 								 ScanDirection indexscandir);
-static IndexOnlyScan *make_indexonlyscan(List *qptlist, List *qpqual,
+static IndexOnlyScan *make_indexonlyscan(uint32_t est_pages_needed, List *qptlist, List *qpqual,
 										 Index scanrelid, Oid indexid,
 										 List *indexqual, List *recheckqual,
 										 List *indexorderby,
@@ -2937,7 +2937,8 @@ create_seqscan_plan(PlannerInfo *root, Path *best_path,
 			replace_nestloop_params(root, (Node *) scan_clauses);
 	}
 
-	scan_plan = make_seqscan(tlist,
+	scan_plan = make_seqscan(best_path->est_pages_needed,
+							 tlist,
 							 scan_clauses,
 							 scan_relid);
 
@@ -3167,7 +3168,8 @@ create_indexscan_plan(PlannerInfo *root,
 
 	/* Finally ready to build the plan node */
 	if (indexonly)
-		scan_plan = (Scan *) make_indexonlyscan(tlist,
+		scan_plan = (Scan *) make_indexonlyscan(best_path->path.est_pages_needed,
+												tlist,
 												qpqual,
 												baserelid,
 												indexoid,
@@ -3177,7 +3179,8 @@ create_indexscan_plan(PlannerInfo *root,
 												indexinfo->indextlist,
 												best_path->indexscandir);
 	else
-		scan_plan = (Scan *) make_indexscan(tlist,
+		scan_plan = (Scan *) make_indexscan(best_path->path.est_pages_needed,
+											tlist,
 											qpqual,
 											baserelid,
 											indexoid,
@@ -5506,7 +5509,8 @@ bitmap_subplan_mark_shared(Plan *plan)
  *****************************************************************************/
 
 static SeqScan *
-make_seqscan(List *qptlist,
+make_seqscan(uint32_t est_pages_needed,
+			 List *qptlist,
 			 List *qpqual,
 			 Index scanrelid)
 {
@@ -5518,6 +5522,7 @@ make_seqscan(List *qptlist,
 	plan->lefttree = NULL;
 	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
+	node->scan.est_pages_needed = est_pages_needed;
 
 	return node;
 }
@@ -5542,7 +5547,8 @@ make_samplescan(List *qptlist,
 }
 
 static IndexScan *
-make_indexscan(List *qptlist,
+make_indexscan(uint32_t est_pages_needed,
+			   List *qptlist,
 			   List *qpqual,
 			   Index scanrelid,
 			   Oid indexid,
@@ -5561,6 +5567,7 @@ make_indexscan(List *qptlist,
 	plan->lefttree = NULL;
 	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
+	node->scan.est_pages_needed = est_pages_needed;
 	node->indexid = indexid;
 	node->indexqual = indexqual;
 	node->indexqualorig = indexqualorig;
@@ -5573,7 +5580,8 @@ make_indexscan(List *qptlist,
 }
 
 static IndexOnlyScan *
-make_indexonlyscan(List *qptlist,
+make_indexonlyscan(uint32_t est_pages_needed,
+				   List *qptlist,
 				   List *qpqual,
 				   Index scanrelid,
 				   Oid indexid,
@@ -5591,6 +5599,7 @@ make_indexonlyscan(List *qptlist,
 	plan->lefttree = NULL;
 	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
+	node->scan.est_pages_needed = est_pages_needed;
 	node->indexid = indexid;
 	node->indexqual = indexqual;
 	node->recheckqual = recheckqual;

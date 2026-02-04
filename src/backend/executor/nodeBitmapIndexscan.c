@@ -22,6 +22,7 @@
 #include "postgres.h"
 
 #include "access/genam.h"
+#include "cmudb/qss/qss.h"
 #include "executor/executor.h"
 #include "executor/nodeBitmapIndexscan.h"
 #include "executor/nodeIndexscan.h"
@@ -101,7 +102,9 @@ MultiExecBitmapIndexScan(BitmapIndexScanState *node)
 	 */
 	while (doscan)
 	{
-		nTuples += (double) index_getbitmap(scandesc, tbm);
+		int64 upd = index_getbitmap(scandesc, tbm);
+		nTuples += (double) upd;
+		QSSInstrumentAddCounter(&(node->ss.ps), 0, (double)upd);
 
 		CHECK_FOR_INTERRUPTS();
 

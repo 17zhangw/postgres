@@ -1662,6 +1662,7 @@ typedef struct Path
 	Cardinality rows;			/* estimated number of result tuples */
 	Cost		startup_cost;	/* cost expended before fetching any tuples */
 	Cost		total_cost;		/* total cost (assuming all tuples fetched) */
+	int         est_pages_needed;
 
 	/* sort ordering of path's output; a List of PathKey nodes; see above */
 	List	   *pathkeys;

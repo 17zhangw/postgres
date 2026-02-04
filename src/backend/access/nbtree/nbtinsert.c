@@ -19,6 +19,7 @@
 #include "access/nbtxlog.h"
 #include "access/transam.h"
 #include "access/xloginsert.h"
+#include "cmudb/qss/qss.h"
 #include "common/int.h"
 #include "common/pg_prng.h"
 #include "lib/qunique.h"
@@ -30,12 +31,6 @@
 #define BTREE_FASTPATH_MIN_LEVEL	2
 
 
-static BTStack _bt_search_insert(Relation rel, Relation heaprel,
-								 BTInsertState insertstate);
-static TransactionId _bt_check_unique(Relation rel, BTInsertState insertstate,
-									  Relation heapRel,
-									  IndexUniqueCheck checkUnique, bool *is_unique,
-									  uint32 *speculativeToken);
 static OffsetNumber _bt_findinsertloc(Relation rel,
 									  BTInsertState insertstate,
 									  bool checkingunique,
@@ -313,7 +308,7 @@ search:
  * that it isn't useful to apply the optimization when there is contention,
  * since each per-backend cache won't stay valid for long.
  */
-static BTStack
+BTStack
 _bt_search_insert(Relation rel, Relation heaprel, BTInsertState insertstate)
 {
 	Assert(insertstate->buf == InvalidBuffer);
@@ -404,7 +399,7 @@ _bt_search_insert(Relation rel, Relation heaprel, BTInsertState insertstate)
  * indexes.  So do not call here when there are NULL values in scan key and
  * the index uses the default NULLS DISTINCT mode.
  */
-static TransactionId
+TransactionId
 _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 				 IndexUniqueCheck checkUnique, bool *is_unique,
 				 uint32 *speculativeToken)
@@ -1495,6 +1490,8 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 				isleaf,
 				isrightmost;
 
+	ActiveQSSInstrumentAddCounter(2, 1);
+
 	/*
 	 * origpage is the original page to be split.  leftpage is a temporary
 	 * buffer that receives the left-sibling data, which will be copied back
@@ -2249,6 +2246,7 @@ _bt_finish_split(Relation rel, Relation heaprel, Buffer lbuf, BTStack stack)
 	bool		wasonly;
 
 	Assert(P_INCOMPLETE_SPLIT(lpageop));
+	ActiveQSSInstrumentAddCounter(3, 1);
 	Assert(heaprel != NULL);
 
 	/* Lock right sibling, the one missing the downlink */

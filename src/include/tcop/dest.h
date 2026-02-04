@@ -120,7 +120,9 @@ struct _DestReceiver
 	/* Per-executor-run initialization and shutdown: */
 	void		(*rStartup) (DestReceiver *self,
 							 int operation,
-							 TupleDesc typeinfo);
+							 TupleDesc typeinfo,
+							 uint64_t queryId,
+							 void *es);
 	void		(*rShutdown) (DestReceiver *self);
 	/* Destroy the receiver object itself (if dynamically allocated) */
 	void		(*rDestroy) (DestReceiver *self);

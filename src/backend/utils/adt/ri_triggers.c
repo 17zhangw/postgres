@@ -30,6 +30,7 @@
 #include "access/xact.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
+#include "cmudb/qss/qss.h"
 #include "commands/trigger.h"
 #include "executor/executor.h"
 #include "executor/spi.h"
@@ -236,7 +237,7 @@ static void ri_ReportViolation(const RI_ConstraintInfo *riinfo,
  * Check foreign key existence (combined for INSERT and UPDATE).
  */
 static Datum
-RI_FKey_check(TriggerData *trigdata)
+RI_FKey_check_internal(TriggerData *trigdata)
 {
 	const RI_ConstraintInfo *riinfo;
 	Relation	fk_rel;
@@ -262,7 +263,10 @@ RI_FKey_check(TriggerData *trigdata)
 	 * should be holding pin, but not lock.
 	 */
 	if (!table_tuple_satisfies_snapshot(trigdata->tg_relation, newslot, SnapshotSelf))
+	{
+		ActiveQSSInstrumentAddCounter(0, 1);
 		return PointerGetDatum(NULL);
+	}
 
 	/*
 	 * Get the relation descriptors of the FK and PK tables.
@@ -282,6 +286,7 @@ RI_FKey_check(TriggerData *trigdata)
 			 * foreign key constraint.
 			 */
 			table_close(pk_rel, RowShareLock);
+			ActiveQSSInstrumentAddCounter(0, 1);
 			return PointerGetDatum(NULL);
 
 		case RI_KEYS_SOME_NULL:
@@ -307,6 +312,7 @@ RI_FKey_check(TriggerData *trigdata)
 							 errtableconstraint(fk_rel,
 												NameStr(riinfo->conname))));
 					table_close(pk_rel, RowShareLock);
+					ActiveQSSInstrumentAddCounter(0, 1);
 					return PointerGetDatum(NULL);
 
 				case FKCONSTR_MATCH_SIMPLE:
@@ -316,6 +322,7 @@ RI_FKey_check(TriggerData *trigdata)
 					 * the constraint.
 					 */
 					table_close(pk_rel, RowShareLock);
+					ActiveQSSInstrumentAddCounter(0, 1);
 					return PointerGetDatum(NULL);
 
 #ifdef NOT_USED
@@ -355,6 +362,7 @@ RI_FKey_check(TriggerData *trigdata)
 		const char *querysep;
 		Oid			queryoids[RI_MAX_NUMKEYS];
 		const char *pk_only;
+		ActiveQSSInstrumentAddCounter(1, 1);
 
 		/* ----------
 		 * The query string built is
@@ -410,8 +418,44 @@ RI_FKey_check(TriggerData *trigdata)
 		elog(ERROR, "SPI_finish failed");
 
 	table_close(pk_rel, RowShareLock);
-
 	return PointerGetDatum(NULL);
+}
+
+
+static Datum
+RI_FKey_check(TriggerData *trigdata)
+{
+	Datum ret;
+	Instrumentation* saved = ActiveQSSInstrumentation;
+	if (saved != NULL)
+	{
+		InstrStopNode(saved, 0.0);
+		ActiveQSSInstrumentation = NULL;
+	}
+
+	Assert(ActiveQSSInstrumentation == NULL);
+	if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) {
+		ActiveQSSInstrumentation = AllocQSSInstrumentation("InsertUpdateFKTriggerEnforce", true);
+		if (ActiveQSSInstrumentation) {
+			ActiveQSSInstrumentation->payload = (int64_t)trigdata->tg_trigger->tgoid;
+			InstrStartNode(ActiveQSSInstrumentation);
+		}
+	}
+
+	ret = RI_FKey_check_internal(trigdata);
+
+	if (ActiveQSSInstrumentation) {
+		InstrStopNode(ActiveQSSInstrumentation, 0.0);
+		ActiveQSSInstrumentation = NULL;
+	}
+
+	if (saved != NULL)
+	{
+		ActiveQSSInstrumentation = saved;
+		InstrStartNode(saved);
+	}
+
+	return ret;
 }
 
 

@@ -36,6 +36,7 @@
 #include "access/tupdesc.h"
 #include "access/visibilitymap.h"
 #include "catalog/pg_type.h"
+#include "cmudb/qss/qss.h"
 #include "executor/executor.h"
 #include "executor/nodeIndexonlyscan.h"
 #include "executor/nodeIndexscan.h"
@@ -120,6 +121,7 @@ IndexOnlyNext(IndexOnlyScanState *node)
 	while ((tid = index_getnext_tid(scandesc, direction)) != NULL)
 	{
 		bool		tuple_from_heap = false;
+		QSSInstrumentAddCounter(node, 0, 1);
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -165,6 +167,7 @@ IndexOnlyNext(IndexOnlyScanState *node)
 			 * Rats, we have to visit the heap to check visibility.
 			 */
 			InstrCountTuples2(node, 1);
+			QSSInstrumentAddCounter(node, 1, 1);
 			if (!index_fetch_heap(scandesc, node->ioss_TableSlot))
 				continue;		/* no visible tuple, try next index entry */
 
@@ -512,6 +515,15 @@ ExecInitIndexOnlyScan(IndexOnlyScan *node, EState *estate, int eflags)
 	TupleDesc	tupDesc;
 	int			indnkeyatts;
 	int			namecount;
+	Instrumentation *instr = NULL;
+	if (qss_capture_nested && (~(eflags & EXEC_FLAG_EXPLAIN_ONLY)))
+	{
+		instr = AllocQSSInstrumentation("InitIndexOnlyScan", true);
+		if (instr != NULL)
+		{
+			InstrStartNode(instr);
+		}
+	}
 
 	/*
 	 * create state structure
@@ -683,6 +695,14 @@ ExecInitIndexOnlyScan(IndexOnlyScan *node, EState *estate, int eflags)
 	}
 
 	indexstate->ioss_NameCStringCount = namecount;
+
+	if (instr != NULL)
+	{
+		QSSInstrumentAddCounterDirect(instr, 0, indexstate->ioss_NumScanKeys);
+		QSSInstrumentAddCounterDirect(instr, 1, indexstate->ioss_NumRuntimeKeys);
+		QSSInstrumentAddCounterDirect(instr, 2, indexstate->ioss_NumOrderByKeys);
+		InstrStopNode(instr, 0.0);
+	}
 
 	/*
 	 * all done.

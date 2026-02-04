@@ -799,6 +799,7 @@ execute_sql_string(const char *sql)
 
 				qdesc = CreateQueryDesc(stmt,
 										sql,
+										0 /* no generation */,
 										GetActiveSnapshot(), NULL,
 										dest, NULL, NULL, 0);
 

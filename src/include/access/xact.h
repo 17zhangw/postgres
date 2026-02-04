@@ -133,6 +133,7 @@ typedef enum
 	XACT_EVENT_PRE_COMMIT,
 	XACT_EVENT_PARALLEL_PRE_COMMIT,
 	XACT_EVENT_PRE_PREPARE,
+	XACT_EVENT_PRE_ABORT
 } XactEvent;
 
 typedef void (*XactCallback) (XactEvent event, void *arg);

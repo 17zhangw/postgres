@@ -63,7 +63,7 @@ static ObjectAddress create_ctas_internal(List *attrList, IntoClause *into);
 static ObjectAddress create_ctas_nodata(List *tlist, IntoClause *into);
 
 /* DestReceiver routines for collecting data */
-static void intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
+static void intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo, uint64_t queryId, void *es);
 static bool intorel_receive(TupleTableSlot *slot, DestReceiver *self);
 static void intorel_shutdown(DestReceiver *self);
 static void intorel_destroy(DestReceiver *self);
@@ -314,6 +314,7 @@ ExecCreateTableAs(ParseState *pstate, CreateTableAsStmt *stmt,
 
 		/* Create a QueryDesc, redirecting output to our tuple receiver */
 		queryDesc = CreateQueryDesc(plan, pstate->p_sourcetext,
+									0 /* no generation */,
 									GetActiveSnapshot(), InvalidSnapshot,
 									dest, params, queryEnv, 0);
 
@@ -449,7 +450,7 @@ CreateIntoRelDestReceiver(IntoClause *intoClause)
  * intorel_startup --- executor startup
  */
 static void
-intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
+intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo, uint64_t queryId, void *es)
 {
 	DR_intorel *myState = (DR_intorel *) self;
 	IntoClause *into = myState->into;

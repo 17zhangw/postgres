@@ -37,6 +37,7 @@
 #include "archive/archive_module.h"
 #include "catalog/namespace.h"
 #include "catalog/storage.h"
+#include "cmudb/qss/qss.h"
 #include "commands/async.h"
 #include "commands/event_trigger.h"
 #include "commands/tablespace.h"
@@ -116,6 +117,13 @@ extern bool optimize_bounded_sort;
  *
  * NOTE! Option values may not contain double quotes!
  */
+
+static const struct config_enum_entry qss_output_format_options[] = {
+	{"noisepage", QSS_OUTPUT_FORMAT_NOISEPAGE, false},
+	{"json", QSS_OUTPUT_FORMAT_JSON, false},
+	{"text", QSS_OUTPUT_FORMAT_TEXT, false},
+	{NULL, 0, false}
+};
 
 static const struct config_enum_entry bytea_output_options[] = {
 	{"escape", BYTEA_OUTPUT_ESCAPE, false},
@@ -2022,6 +2030,33 @@ struct config_bool ConfigureNamesBool[] =
 			gettext_noop("Enables a physical standby to synchronize logical failover replication slots from the primary server."),
 		},
 		&sync_replication_slots,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"qss_capture_enabled", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Sets whether to capture anything with QSS."),
+		},
+		&qss_capture_enabled,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"qss_capture_nested", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Sets whether to capture nested queries with QSS."),
+		},
+		&qss_capture_nested,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"qss_capture_exec_stats", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Sets whether to collect execution statistics with QSS."),
+		},
+		&qss_capture_exec_stats,
 		false,
 		NULL, NULL, NULL
 	},
@@ -5132,6 +5167,16 @@ struct config_enum ConfigureNamesEnum[] =
 		},
 		&debug_logical_replication_streaming,
 		DEBUG_LOGICAL_REP_STREAMING_BUFFERED, debug_logical_replication_streaming_options,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"qss_output_format", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets the output format for qss output."),
+			NULL
+		},
+		&qss_output_format,
+		QSS_OUTPUT_FORMAT_NOISEPAGE, qss_output_format_options,
 		NULL, NULL, NULL
 	},
 

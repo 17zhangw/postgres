@@ -21,6 +21,7 @@
 
 #include "postgres.h"
 
+#include "cmudb/qss/qss.h"
 #include "executor/execdebug.h"
 #include "executor/nodeNestloop.h"
 #include "miscadmin.h"
@@ -106,6 +107,7 @@ ExecNestLoop(PlanState *pstate)
 		{
 			ENL1_printf("getting new outer tuple");
 			outerTupleSlot = ExecProcNode(outerPlan);
+			QSSInstrumentAddCounter(pstate, 0, 1);
 
 			/*
 			 * if there are no more outer tuples, then the join is complete..
@@ -158,6 +160,7 @@ ExecNestLoop(PlanState *pstate)
 
 		innerTupleSlot = ExecProcNode(innerPlan);
 		econtext->ecxt_innertuple = innerTupleSlot;
+		QSSInstrumentAddCounter(pstate, 1, 1);
 
 		if (TupIsNull(innerTupleSlot))
 		{

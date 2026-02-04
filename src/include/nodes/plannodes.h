@@ -387,6 +387,7 @@ typedef struct Scan
 
 	Plan		plan;
 	Index		scanrelid;		/* relid is index into the range table */
+	int         est_pages_needed; /* estimated number of pages that are needed */
 } Scan;
 
 /* ----------------

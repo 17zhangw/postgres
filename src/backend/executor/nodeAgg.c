@@ -254,6 +254,7 @@
 #include "catalog/pg_aggregate.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
+#include "cmudb/qss/qss.h"
 #include "common/hashfn.h"
 #include "executor/execExpr.h"
 #include "executor/executor.h"
@@ -558,7 +559,10 @@ fetch_input_tuple(AggState *aggstate)
 		slot = aggstate->sort_slot;
 	}
 	else
+	{
+		QSSInstrumentAddCounter(&(aggstate->ss.ps), 0, 1);
 		slot = ExecProcNode(outerPlanState(aggstate));
+	}
 
 	if (!TupIsNull(slot) && aggstate->sort_out)
 		tuplesort_puttupleslot(aggstate->sort_out, slot);

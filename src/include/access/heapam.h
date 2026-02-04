@@ -315,6 +315,8 @@ extern void heap_get_latest_tid(TableScanDesc sscan, ItemPointer tid);
 extern BulkInsertState GetBulkInsertState(void);
 extern void FreeBulkInsertState(BulkInsertState);
 extern void ReleaseBulkInsertStatePin(BulkInsertState bistate);
+extern void do_heap_insert(Relation relation, HeapTuple tup, TransactionId xid,
+						   CommandId cid, int options, BulkInsertState bistate);
 
 extern void heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 						int options, BulkInsertState bistate);

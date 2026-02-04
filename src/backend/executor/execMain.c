@@ -60,6 +60,8 @@
 #include "utils/rls.h"
 #include "utils/snapmgr.h"
 
+#include "cmudb/qss/qss.h"
+
 
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
 ExecutorStart_hook_type ExecutorStart_hook = NULL;
@@ -71,7 +73,7 @@ ExecutorEnd_hook_type ExecutorEnd_hook = NULL;
 ExecutorCheckPerms_hook_type ExecutorCheckPerms_hook = NULL;
 
 /* decls for local routines only used within this module */
-static void InitPlan(QueryDesc *queryDesc, int eflags);
+static void InitPlan(QueryDesc *queryDesc, int eflags, Instrumentation *instr);
 static void CheckValidRowMarkRel(Relation rel, RowMarkType markType);
 static void ExecPostprocessPlan(EState *estate);
 static void ExecEndPlan(PlanState *planstate, EState *estate);
@@ -80,7 +82,8 @@ static void ExecutePlan(QueryDesc *queryDesc,
 						bool sendTuples,
 						uint64 numberTuples,
 						ScanDirection direction,
-						DestReceiver *dest);
+						DestReceiver *dest,
+						struct Instrumentation *totaltime);
 static bool ExecCheckOneRelPerms(RTEPermissionInfo *perminfo);
 static bool ExecCheckPermissionsModified(Oid relOid, Oid userid,
 										 Bitmapset *modifiedCols,
@@ -142,6 +145,16 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
 	EState	   *estate;
 	MemoryContext oldcontext;
+	Instrumentation *instr = NULL;
+
+	if (qss_capture_nested)
+	{
+		instr = AllocQSSInstrumentation("ExecutorStart", true);
+		if (instr != NULL)
+		{
+			InstrStartNode(instr);
+		}
+	}
 
 	/* sanity checks: queryDesc must not be started already */
 	Assert(queryDesc != NULL);
@@ -258,9 +271,13 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	/*
 	 * Initialize the plan state tree
 	 */
-	InitPlan(queryDesc, eflags);
+	InitPlan(queryDesc, eflags, instr);
 
 	MemoryContextSwitchTo(oldcontext);
+	if (instr != NULL)
+	{
+		InstrStopNode(instr, 0.0);
+	}
 }
 
 /* ----------------------------------------------------------------
@@ -335,7 +352,9 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 
 	/* Allow instrumentation of Executor overall runtime */
 	if (queryDesc->totaltime)
+	{
 		InstrStartNode(queryDesc->totaltime);
+	}
 
 	/*
 	 * extract information from the query descriptor and the query feature.
@@ -352,7 +371,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 				  queryDesc->plannedstmt->hasReturning);
 
 	if (sendTuples)
-		dest->rStartup(dest, operation, queryDesc->tupDesc);
+		dest->rStartup(dest, operation, queryDesc->tupDesc, queryDesc->plannedstmt->queryId, estate);
 
 	/*
 	 * run plan
@@ -363,7 +382,8 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 					sendTuples,
 					count,
 					direction,
-					dest);
+					dest,
+					queryDesc->totaltime);
 
 	/*
 	 * Update es_total_processed to keep track of the number of tuples
@@ -378,7 +398,9 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		dest->rShutdown(dest);
 
 	if (queryDesc->totaltime)
+	{
 		InstrStopNode(queryDesc->totaltime, estate->es_processed);
+	}
 
 	MemoryContextSwitchTo(oldcontext);
 }
@@ -428,7 +450,9 @@ standard_ExecutorFinish(QueryDesc *queryDesc)
 
 	/* Allow instrumentation of Executor overall runtime */
 	if (queryDesc->totaltime)
+	{
 		InstrStartNode(queryDesc->totaltime);
+	}
 
 	/* Run ModifyTable nodes to completion */
 	ExecPostprocessPlan(estate);
@@ -438,7 +462,15 @@ standard_ExecutorFinish(QueryDesc *queryDesc)
 		AfterTriggerEndQuery(estate);
 
 	if (queryDesc->totaltime)
+	{
 		InstrStopNode(queryDesc->totaltime, 0);
+
+		if (queryDesc->nesting_level == 1)
+		{
+			uint64_t time = 0;
+			InstrEndLoop(queryDesc->totaltime);
+		}
+	}
 
 	MemoryContextSwitchTo(oldcontext);
 
@@ -824,7 +856,7 @@ ExecCheckXactReadOnly(PlannedStmt *plannedstmt)
  * ----------------------------------------------------------------
  */
 static void
-InitPlan(QueryDesc *queryDesc, int eflags)
+InitPlan(QueryDesc *queryDesc, int eflags, Instrumentation *instr)
 {
 	CmdType		operation = queryDesc->operation;
 	PlannedStmt *plannedstmt = queryDesc->plannedstmt;
@@ -910,6 +942,11 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 				   estate->es_rowmarks[erm->rti - 1] == NULL);
 
 			estate->es_rowmarks[erm->rti - 1] = erm;
+
+			if (instr != NULL)
+			{
+				QSSInstrumentAddCounterDirect(instr, 0, 1);
+			}
 		}
 	}
 
@@ -944,11 +981,22 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 		if (bms_is_member(i, plannedstmt->rewindPlanIDs))
 			sp_eflags |= EXEC_FLAG_REWIND;
 
+		if (instr != NULL)
+		{
+			InstrStopNode(instr, 0.0);
+		}
+
 		subplanstate = ExecInitNode(subplan, estate, sp_eflags);
+
+		if (instr != NULL)
+		{
+			InstrStartNode(instr);
+		}
 
 		estate->es_subplanstates = lappend(estate->es_subplanstates,
 										   subplanstate);
 
+		QSSInstrumentAddCounterDirect(instr, 1, 1);
 		i++;
 	}
 
@@ -957,7 +1005,17 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	 * tree.  This opens files, allocates storage and leaves us ready to start
 	 * processing tuples.
 	 */
+	if (instr != NULL)
+	{
+		InstrStopNode(instr, 0.0);
+	}
+
 	planstate = ExecInitNode(plan, estate, eflags);
+
+	if (instr != NULL)
+	{
+		InstrStartNode(instr);
+	}
 
 	/*
 	 * Get the tuple descriptor describing the type of tuples to return.
@@ -1220,7 +1278,7 @@ InitResultRelInfo(ResultRelInfo *resultRelInfo,
 		resultRelInfo->ri_TrigWhenExprs = (ExprState **)
 			palloc0(n * sizeof(ExprState *));
 		if (instrument_options)
-			resultRelInfo->ri_TrigInstrument = InstrAlloc(n, instrument_options, false);
+			resultRelInfo->ri_TrigInstrument = InstrAlloc(n, instrument_options, false, 0);
 	}
 	else
 	{
@@ -1600,7 +1658,8 @@ ExecutePlan(QueryDesc *queryDesc,
 			bool sendTuples,
 			uint64 numberTuples,
 			ScanDirection direction,
-			DestReceiver *dest)
+			DestReceiver *dest,
+			struct Instrumentation *totaltime)
 {
 	EState	   *estate = queryDesc->estate;
 	PlanState  *planstate = queryDesc->planstate;
@@ -1654,6 +1713,12 @@ ExecutePlan(QueryDesc *queryDesc,
 		 */
 		if (TupIsNull(slot))
 			break;
+
+		/* Indicate that we've pulled this many slots out. */
+		if (totaltime != NULL)
+		{
+			InstrUpdateTupleCount(totaltime, 1.0);
+		}
 
 		/*
 		 * If we have a junk filter, then project a new tuple with the junk

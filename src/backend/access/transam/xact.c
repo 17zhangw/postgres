@@ -2763,6 +2763,9 @@ AbortTransaction(void)
 	AtAbort_Memory();
 	AtAbort_ResourceOwner();
 
+	/* Invoke callback that we've started the Abort process */
+	CallXactCallbacks(XACT_EVENT_PRE_ABORT);
+
 	/*
 	 * Release any LW locks we might be holding as quickly as possible.
 	 * (Regular locks, however, must be held till we finish aborting.)

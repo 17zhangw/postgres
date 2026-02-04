@@ -38,6 +38,7 @@
 #include "commands/async.h"
 #include "commands/event_trigger.h"
 #include "commands/prepare.h"
+#include "cmudb/qss/qss.h"
 #include "common/pg_prng.h"
 #include "jit/jit.h"
 #include "libpq/libpq.h"
@@ -4475,6 +4476,9 @@ PostgresMain(const char *dbname, const char *username)
 		 * the storage it points at.
 		 */
 		debug_query_string = NULL;
+
+		/* We need to wipe any QSS state. */
+		QSSAbort();
 
 		/*
 		 * Abort the current transaction in order to recover.

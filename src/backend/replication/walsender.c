@@ -616,7 +616,7 @@ SendTimeLineHistory(TimeLineHistoryCmd *cmd)
 	TLHistoryFilePath(path, cmd->timeline);
 
 	/* Send a RowDescription message */
-	dest->rStartup(dest, CMD_SELECT, tupdesc);
+	dest->rStartup(dest, CMD_SELECT, tupdesc, 0, NULL);
 
 	/* Send a DataRow message */
 	pq_beginmessage(&buf, PqMsg_DataRow);

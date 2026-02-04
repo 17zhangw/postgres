@@ -28,6 +28,7 @@
 #include "access/transam.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
+#include "cmudb/qss/qss.h"
 #include "common/int.h"
 #include "miscadmin.h"
 #include "storage/indexfsm.h"
@@ -904,6 +905,7 @@ _bt_allocbuf(Relation rel, Relation heaprel)
 		if (blkno == InvalidBlockNumber)
 			break;
 		buf = ReadBuffer(rel, blkno);
+		ActiveQSSInstrumentAddCounter(0, 1);
 		if (_bt_conditionallockbuf(rel, buf))
 		{
 			page = BufferGetPage(buf);
@@ -967,6 +969,8 @@ _bt_allocbuf(Relation rel, Relation heaprel)
 			ReleaseBuffer(buf);
 		}
 	}
+
+	ActiveQSSInstrumentAddCounter(1, 1);
 
 	/*
 	 * Extend the relation by one page. Need to use RBM_ZERO_AND_LOCK or we

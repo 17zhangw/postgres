@@ -333,6 +333,7 @@ typedef struct Const
 	 * locations in query jumbling, to be marked as parameters.
 	 */
 	ParseLoc	location pg_node_attr(query_jumble_location);
+	int         paramId;
 } Const;
 
 /*

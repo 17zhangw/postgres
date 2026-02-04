@@ -111,6 +111,7 @@
 #include "access/tableam.h"
 #include "access/xact.h"
 #include "catalog/index.h"
+#include "cmudb/qss/qss.h"
 #include "executor/executor.h"
 #include "nodes/nodeFuncs.h"
 #include "storage/lmgr.h"
@@ -358,6 +359,14 @@ ExecInsertIndexTuples(ResultRelInfo *resultRelInfo,
 		if (!indexInfo->ii_ReadyForInserts)
 			continue;
 
+		if (qss_capture_exec_stats && qss_output_format == QSS_OUTPUT_FORMAT_NOISEPAGE) {
+			ActiveQSSInstrumentation = AllocQSSInstrumentation("ModifyTableIndexInsert", true);
+			if (ActiveQSSInstrumentation) {
+				ActiveQSSInstrumentation->payload = (int64_t)indexRelation->rd_id;
+				InstrStartNode(ActiveQSSInstrumentation);
+			}
+		}
+
 		/*
 		 * Skip processing of non-summarizing indexes if we only update
 		 * summarizing indexes
@@ -382,8 +391,13 @@ ExecInsertIndexTuples(ResultRelInfo *resultRelInfo,
 			}
 
 			/* Skip this index-update if the predicate isn't satisfied */
-			if (!ExecQual(predicate, econtext))
+			if (!ExecQual(predicate, econtext)) {
+				if (ActiveQSSInstrumentation) {
+					InstrStopNode(ActiveQSSInstrumentation, 0.0);
+					ActiveQSSInstrumentation = NULL;
+				}
 				continue;
+			}
 		}
 
 		/*
@@ -501,8 +515,15 @@ ExecInsertIndexTuples(ResultRelInfo *resultRelInfo,
 			if (indexRelation->rd_index->indimmediate && specConflict)
 				*specConflict = true;
 		}
+
+		if (ActiveQSSInstrumentation) {
+			InstrStopNode(ActiveQSSInstrumentation, 0.0);
+			InstrEndLoop(ActiveQSSInstrumentation);
+			ActiveQSSInstrumentation = NULL;
+		}
 	}
 
+	Assert(ActiveQSSInstrumentation == NULL);
 	return result;
 }
 

@@ -557,6 +557,7 @@ BeginCopyTo(ParseState *pstate,
 
 		/* Create a QueryDesc requesting no output */
 		cstate->queryDesc = CreateQueryDesc(plan, pstate->p_sourcetext,
+											0 /* no generation */,
 											GetActiveSnapshot(),
 											InvalidSnapshot,
 											dest, NULL, NULL, 0);
@@ -1223,7 +1224,7 @@ CopyAttributeOutCSV(CopyToState cstate, const char *string,
  * copy_dest_startup --- executor startup
  */
 static void
-copy_dest_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
+copy_dest_startup(DestReceiver *self, int operation, TupleDesc typeinfo, uint64_t queryId, void *es)
 {
 	/* no-op */
 }

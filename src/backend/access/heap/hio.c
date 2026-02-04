@@ -19,6 +19,7 @@
 #include "access/hio.h"
 #include "access/htup_details.h"
 #include "access/visibilitymap.h"
+#include "cmudb/qss/qss.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
 #include "storage/lmgr.h"
@@ -600,6 +601,8 @@ RelationGetBufferForTuple(Relation relation, Size len,
 loop:
 	while (targetBlock != InvalidBlockNumber)
 	{
+		ActiveQSSInstrumentAddCounter(3, 1);
+
 		/*
 		 * Read and exclusive-lock the target block, as well as the other
 		 * block if one was given, taking suitable care with lock ordering and
@@ -762,6 +765,8 @@ loop:
 														targetFreeSpace);
 		}
 	}
+
+	ActiveQSSInstrumentAddCounter(4, 1);
 
 	/* Have to extend the relation */
 	buffer = RelationAddBlocks(relation, bistate, num_pages, use_fsm,

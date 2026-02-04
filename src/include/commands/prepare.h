@@ -58,4 +58,6 @@ extern List *FetchPreparedStatementTargetList(PreparedStatement *stmt);
 
 extern void DropAllPreparedStatements(void);
 
+ParamListInfo EvaluateParams(ParseState *pstate, PreparedStatement *pstmt, List *params, EState *estate);
+
 #endif							/* PREPARE_H */
