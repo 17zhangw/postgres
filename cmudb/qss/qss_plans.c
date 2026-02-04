@@ -12,7 +12,6 @@
 #include "catalog/namespace.h"
 #include "catalog/index.h"
 #include "cmudb/qss/qss.h"
-#include "cmudb/tscout/marker.h"
 #include "commands/explain.h"
 #include "miscadmin.h"
 #include "nodes/pg_list.h"
