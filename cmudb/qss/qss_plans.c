@@ -308,6 +308,8 @@ void qss_ExecutorEnd(QueryDesc *query_desc) {
 		} else {
 			standard_ExecutorEnd(query_desc);
 		}
+
+		return;
 	}
 
 	/* Switch into per-query memory context */
