@@ -6,7 +6,7 @@
 #   BUILD_DIR       : Folder that `make install` output should be written to.
 
 CONFIGURE_TYPE="$1"
-CONFIGURE_TYPES=("debug" "release")
+CONFIGURE_TYPES=("debug" "release", "relwithdeb")
 
 BUILD_DIR="$2"
 if [ -z "$BUILD_DIR" ]; then
@@ -15,6 +15,7 @@ fi
 
 CFLAGS_DEBUG="-ggdb -Og -g3 -m64 -fno-omit-frame-pointer"
 CFLAGS_RELEASE="-O3 -m64 -march=native"
+CFLAGS_RELWITHDEB="-O3 -g"
 
 _parse_configure() {
   # Get the configure type.
@@ -42,6 +43,11 @@ _configure_release() {
   ./configure CFLAGS="$CFLAGS_RELEASE" --prefix=$BUILD_DIR --quiet
 }
 
+_configure_relwithdeb() {
+  set -x
+  ./configure CFLAGS="$CFLAGS_RELWITHDEB" --prefix=$BUILD_DIR --quiet
+}
+
 main() {
   set -o errexit
 
@@ -51,6 +57,8 @@ main() {
     _configure_debug
   elif [ "$CONFIGURE_TYPE" = "release" ]; then
     _configure_release
+  elif [ "$CONFIGURE_TYPE" = "relwithdeb" ]; then
+    _configure_relwithdeb
   fi
 }
 

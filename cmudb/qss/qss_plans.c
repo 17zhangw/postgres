@@ -231,6 +231,7 @@ static void ProcessQueryInternalTable(QueryDesc *query_desc, bool instrument) {
 			StringInfo plan;
 			entry->key = key;
 			entry->statement_ts = timestamp;
+			entry->query_plan = NULL;
 			plan = ProcessQueryExplain(query_desc, instrument, true);
 			if (plan != NULL)
 			{
