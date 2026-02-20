@@ -104,7 +104,7 @@ def task_np_build_extensions():
             CmdAction("(cd cmudb/pg_hint_plan && make clean && make install)", env={"PATH": npath}),
             CmdAction("(cd cmudb/HypoPG && make clean && make install)", env={"PATH": npath}),
             #CmdAction("(cd cmudb/hypocost && make clean && make install)", env={"PATH": npath}),
-            #CmdAction("(cd cmudb/pgvector && make clean && make install)", env={"PATH": npath}),
+            CmdAction("(cd cmudb/pgvector && make clean && make install)", env={"PATH": npath}),
             #CmdAction("(cd cmudb/boot_rs && cargo clean && cargo build --release && cbindgen . -o target/boot_rs.h --lang c)", env={"PATH": npath}),
             #CmdAction("(cd cmudb/boot && make clean && make install)", env={"PATH": npath}),
         ],
